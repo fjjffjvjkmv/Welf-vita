@@ -74,3 +74,28 @@ def test_client_endpoint_uses_railway_proxy_host_and_port():
     host, port = main.public_config_endpoint("subscription-link", "panel.example.com")
     assert host == "ir.example.com"
     assert port == 15432
+
+
+
+def test_railway_token_readiness_never_returns_the_token(tmp_path, monkeypatch):
+    import bottokentcpproxy
+
+    token_file = tmp_path / ".bot_tcp_proxy_token"
+    monkeypatch.setattr(bottokentcpproxy, "TOKEN_FILE", token_file)
+    monkeypatch.delenv("RAILWAY_API_TOKEN", raising=False)
+    monkeypatch.delenv("RAILWAY_TOKEN", raising=False)
+
+    assert bottokentcpproxy.token_source() == "missing"
+    bottokentcpproxy.save_token("test-railway-token-0123456789")
+    status = bottokentcpproxy.railway_prerequisite_status()
+
+    assert bottokentcpproxy.load_token() == "test-railway-token-0123456789"
+    assert bottokentcpproxy.token_source() == "saved"
+    assert status["has_token"]
+    assert "test-railway-token-0123456789" not in str(status)
+    assert token_file.stat().st_mode & 0o777 == 0o600
+
+    bottokentcpproxy.clear_token()
+    monkeypatch.setenv("RAILWAY_API_TOKEN", "token-from-environment")
+    assert bottokentcpproxy.load_token() == "token-from-environment"
+    assert bottokentcpproxy.token_source() == "environment"

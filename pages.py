@@ -2575,6 +2575,22 @@ a{color:inherit;text-decoration:none}
     </div>
   </div>
 
+  <div class="card" style="margin-top:16px" id="rathole-railway-card">
+    <div class="card-title"><i class="ti ti-cloud"></i> دسترسی Railway برای TCP Proxy
+      <span class="badge bg-amber" id="rh-railway-badge" style="margin-right:auto">در حال بررسی...</span>
+    </div>
+    <div class="g2" style="margin:0">
+      <div>
+        <label>Railway API Token</label>
+        <input class="cm-input" id="rh-railway-token" type="password" autocomplete="new-password" spellcheck="false" placeholder="توکن Account یا Workspace را فقط یک‌بار وارد کن">
+        <div class="cm-note" style="margin-top:8px"><i class="ti ti-lock"></i><span id="rh-railway-note">توکن فقط در storage پایدار پنل ذخیره می‌شود و هرگز دوباره در مرورگر نمایش داده نمی‌شود.</span></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-p btn-sm" onclick="saveRatholeRailwayToken()"><i class="ti ti-key"></i> ذخیرهٔ توکن Railway</button>
+      </div>
+    </div>
+  </div>
+
   <div class="card" style="margin-top:16px" id="rathole-control-card">
     <div class="card-title"><i class="ti ti-plug-connected"></i> مسیر کنترل Rathole
       <span class="badge bg-amber" id="rh-control-badge" style="margin-right:auto">در حال بررسی...</span>
@@ -4337,7 +4353,48 @@ function applyTunnelPresetFromLink(){
   }
   if(info)info.textContent=`${x.label||x.uuid} · ${x.protocol||'—'} · پورت پیشنهادی ${suggested}`;
 }
+function focusRatholeRailwayAccess(){
+  const el=document.getElementById('rathole-railway-card');
+  if(el) el.scrollIntoView({behavior:'smooth',block:'center'});
+  document.getElementById('rh-railway-token')?.focus();
+}
+function renderRatholeRailwayStatus(railway){
+  const badge=document.getElementById('rh-railway-badge');
+  const note=document.getElementById('rh-railway-note');
+  if(!badge||!note)return;
+  if(railway?.ready){
+    badge.className='badge bg-green';
+    badge.textContent='آماده';
+    const source=railway.token_source==='environment'?'متغیر محیطی Railway':'storage پایدار پنل';
+    note.textContent=`توکن و context سرویس آماده است (${source}). اکنون می‌توانی مسیر کنترل و پورت‌های تونل را منتشر کنی.`;
+  }else if(!railway?.has_token){
+    badge.className='badge bg-red';
+    badge.textContent='توکن لازم است';
+    note.textContent='یک Railway Account یا Workspace API Token وارد کن. توکن در مرورگر بازخوانی نمی‌شود و فقط با دسترسی مدیر پنل قابل ذخیره است.';
+  }else{
+    badge.className='badge bg-red';
+    badge.textContent='context Railway ناقص است';
+    note.textContent=railway.context_error||'شناسهٔ سرویس یا environment Railway در دسترس نیست. پنل باید روی همان سرویس Railway اجرا شود.';
+  }
+}
+async function saveRatholeRailwayToken(){
+  const field=document.getElementById('rh-railway-token');
+  const token=(field?.value||'').trim();
+  if(!token){toast('ابتدا Railway API Token را وارد کن','warn'); field?.focus(); return;}
+  try{
+    const r=await authF('/api/rathole/railway/token',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.detail||'ذخیره توکن Railway ناموفق بود');
+    if(field) field.value='';
+    renderRatholeRailwayStatus(d.railway);
+    toast(d.railway?.ready?'توکن Railway ذخیره شد و TCP Proxy آماده است':'توکن ذخیره شد؛ context سرویس Railway را بررسی کن',d.railway?.ready?'ok':'warn');
+    await loadRathole();
+  }catch(e){toast(e.message||'ذخیره توکن Railway ناموفق بود','err');}
+}
 async function bootstrapRatholeControl(){
+  if(!ratholeCache?.railway?.ready){
+    toast('ابتدا دسترسی Railway را کامل کن','warn'); focusRatholeRailwayAccess(); return;
+  }
   try{
     const r=await authF('/api/rathole/bootstrap',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     const d=await r.json();
@@ -4376,6 +4433,12 @@ async function createTunnelFromWorkflow(){
   }
   if(!nodeId){
     toast('اول نود ایران آنلاین را انتخاب کن','warn'); return;
+  }
+
+  if(!ratholeCache?.railway?.ready){
+    toast('ابتدا Railway API Token و context سرویس را در بالای صفحه آماده کن','warn');
+    focusRatholeRailwayAccess();
+    return;
   }
 
   const node=ratholeCache.nodes.find(n=>n.node_id===nodeId);
@@ -4450,6 +4513,7 @@ async function loadRathole(){
     document.getElementById('rh-cf-v4').value=(d.settings.cloudflare_ipv4||[]).join('\n');
     document.getElementById('rh-cf-v6').value=(d.settings.cloudflare_ipv6||[]).join('\n');
     const workflowSelection=getTunnelFormSelection();
+    renderRatholeRailwayStatus(d.railway||{});
     renderRatholeControlStatus(d);
     renderRatholeNodes();
     renderTunnelNodeSelect();

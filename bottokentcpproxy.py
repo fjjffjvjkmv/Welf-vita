@@ -62,6 +62,10 @@ MAX_BACKOFF = 15.0
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 TOKEN_FILE = DATA_DIR / ".bot_tcp_proxy_token"
+# Railway variables are useful for immutable deployments. A saved token takes
+# precedence so an administrator can rotate it in the authenticated UI without
+# redeploying the service.
+TOKEN_ENV_NAMES = ("RAILWAY_API_TOKEN", "RAILWAY_TOKEN")
 
 MUTATION_CREATE = """
 mutation TcpProxyCreate($environmentId: String!, $serviceId: String!, $applicationPort: Int!) {
@@ -112,14 +116,20 @@ def _log(msg: str):
     logger.info(f"BotTcpProxy: {msg}")
 
 
-def get_status() -> dict:
-    return {
-        **bot_proxy_state,
-        "has_token": has_saved_token(),
-        "blacklist": sorted(BLACKLIST_DOMAINS),
-        "known_domains": list(KNOWN_DOMAINS),
-        "logs": list(bot_proxy_log)[-100:],
-    }
+def _environment_token() -> Optional[str]:
+    for name in TOKEN_ENV_NAMES:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return None
+
+
+def token_source() -> str:
+    if has_saved_token():
+        return "saved"
+    if _environment_token():
+        return "environment"
+    return "missing"
 
 
 def has_saved_token() -> bool:
@@ -133,22 +143,59 @@ def load_token() -> Optional[str]:
     try:
         if TOKEN_FILE.exists():
             val = TOKEN_FILE.read_text(encoding="utf-8").strip()
-            return val or None
+            if val:
+                return val
     except Exception as exc:
         logger.warning(f"BotTcpProxy: خواندن توکن ذخیره‌شده ناموفق بود: {exc}")
-    return None
+    return _environment_token()
 
 
 def save_token(token: str):
+    token = str(token or "").strip()
+    if not token:
+        raise ValueError("توکن Railway خالی است")
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        TOKEN_FILE.write_text(token.strip(), encoding="utf-8")
-        try:
-            os.chmod(TOKEN_FILE, 0o600)
-        except Exception:
-            pass
+        tmp = TOKEN_FILE.with_suffix(".tmp")
+        tmp.write_text(token, encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        tmp.replace(TOKEN_FILE)
     except Exception as exc:
         logger.warning(f"BotTcpProxy: ذخیره‌ی توکن روی دیسک ناموفق بود: {exc}")
+        raise RuntimeError("ذخیره امن توکن Railway ناموفق بود") from exc
+
+
+def railway_prerequisite_status() -> dict:
+    """Return a token-free readiness report for the Rathole publication flow."""
+    try:
+        service_id, environment_id = get_service_context()
+        context_ready = True
+        context_error = ""
+    except RuntimeError as exc:
+        service_id = environment_id = ""
+        context_ready = False
+        context_error = str(exc)
+    source = token_source()
+    return {
+        "has_token": source != "missing",
+        "token_source": source,
+        "context_ready": context_ready,
+        "context_error": context_error,
+        "service_id_present": bool(service_id),
+        "environment_id_present": bool(environment_id),
+        "ready": bool(source != "missing" and context_ready),
+    }
+
+
+def get_status() -> dict:
+    return {
+        **bot_proxy_state,
+        "has_token": token_source() != "missing",
+        "token_source": token_source(),
+        "blacklist": sorted(BLACKLIST_DOMAINS),
+        "known_domains": list(KNOWN_DOMAINS),
+        "logs": list(bot_proxy_log)[-100:],
+    }
 
 
 def clear_token():
@@ -455,7 +502,7 @@ def remove_from_blacklist(domain: str):
 async def create_public_proxy_for_port(application_port: int) -> dict:
     token = load_token()
     if not token:
-        raise RuntimeError("توکن Railway ذخیره نشده — ابتدا یک‌بار از بخش Bot TCP Proxy توکن را وارد کنید")
+        raise RuntimeError("توکن Railway تنظیم نشده است؛ در صفحهٔ تانلینگ، بخش «دسترسی Railway» یک Account یا Workspace API Token وارد و ذخیره کنید")
 
     service_id, environment_id = get_service_context()
     async with httpx.AsyncClient() as client:

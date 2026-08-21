@@ -2740,14 +2740,40 @@ async def rathole_status(_=Depends(require_auth)):
         t.pop("token", None)
     st = dict(STATE["settings"])
     return {"settings": public_settings(), "nodes": nodes, "tunnels": tunnels,
+            "railway": bottokentcpproxy.railway_prerequisite_status(),
             "server": {
                 "host": st.get("server_public_host") or os.environ.get("RATHOLE_PUBLIC_HOST", ""),
                 "port": int(st.get("server_public_port") or 0),
                 "control_port": int(st.get("server_bind_port")),
                 "control_ready": bool(st.get("server_public_host") and st.get("server_public_port")),
-                "control_proxy_id": st.get("server_public_proxy_id",""),
+                "control_proxy_id": st.get("server_public_proxy_id","") ,
             }}
 
+
+@app.get("/api/rathole/railway/status")
+async def rathole_railway_status(_=Depends(require_auth)):
+    """Return a token-free Railway readiness report for the authenticated UI."""
+    return {"ok": True, "railway": bottokentcpproxy.railway_prerequisite_status()}
+
+
+@app.put("/api/rathole/railway/token")
+async def rathole_save_railway_token(request: Request, _=Depends(require_auth)):
+    """Persist an administrator-supplied Railway API token with mode 0600.
+
+    The token is never echoed back to the browser; callers receive only the
+    readiness state needed to continue creating Railway TCP proxies.
+    """
+    body = await request.json()
+    token = str(body.get("token") or "").strip()
+    if len(token) < 16 or len(token) > 4096:
+        raise HTTPException(status_code=400, detail="توکن Railway نامعتبر یا خالی است")
+    try:
+        bottokentcpproxy.save_token(token)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    status = bottokentcpproxy.railway_prerequisite_status()
+    log_activity("rathole", "توکن Railway برای TCP Proxy ذخیره شد", "ok")
+    return {"ok": True, "railway": status}
 
 
 async def _ensure_rathole_control_proxy() -> dict:
@@ -2768,8 +2794,11 @@ async def _ensure_rathole_control_proxy() -> dict:
             "proxy_id": st.get("server_public_proxy_id", ""),
             "reused": True,
         }
-    if not bottokentcpproxy.load_token():
-        raise RuntimeError("Railway TCP Proxy token is not configured")
+    railway = bottokentcpproxy.railway_prerequisite_status()
+    if not railway["has_token"]:
+        raise RuntimeError("توکن Railway تنظیم نشده است؛ در بخش «دسترسی Railway» یک API Token ذخیره کنید")
+    if not railway["context_ready"]:
+        raise RuntimeError(railway["context_error"])
     old_proxy = st.get("server_public_proxy_id", "")
     if old_proxy:
         try:
