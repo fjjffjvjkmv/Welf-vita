@@ -15,6 +15,7 @@ import json
 import secrets
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Any
 
 DATA_DIR = Path(__import__("os").environ.get("DATA_DIR", "/data"))
@@ -138,19 +139,40 @@ def public_settings() -> dict:
 
 
 def validate_public_endpoint(host: str, port: int) -> tuple[str, int]:
-    """Validate a raw TCP endpoint entered by an authenticated administrator."""
-    host = str(host or "").strip().rstrip(".").lower()
-    if not host or len(host) > 253 or any(ch.isspace() for ch in host):
+    """Normalize a Railway endpoint supplied as hostname, hostname:port, or URL.
+
+    Railway's dashboard often copies an HTTPS URL while a Rathole TCP client
+    needs only a raw hostname and a separately supplied TCP proxy port. Accept
+    the friendly forms, but reject paths, credentials and query strings that
+    cannot be part of a raw TCP endpoint.
+    """
+    raw = str(host or "").strip()
+    if not raw or any(ch.isspace() for ch in raw):
         raise ValueError("hostname یا IP عمومی نامعتبر است")
-    if any(ch in host for ch in "/\\@?"):
-        raise ValueError("برای endpoint فقط hostname یا IP وارد کنید، نه URL")
     try:
-        port = int(port)
+        parsed = urlsplit(raw if "://" in raw else "//" + raw)
+        if parsed.username or parsed.password or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+            raise ValueError("فقط hostname یا URL سادهٔ Railway را وارد کنید")
+        normalized_host = str(parsed.hostname or "").strip().rstrip(".").lower()
+        url_port = parsed.port
+    except ValueError as exc:
+        if str(exc).startswith("فقط hostname"):
+            raise
+        raise ValueError("hostname یا پورت endpoint نامعتبر است") from exc
+    if not normalized_host or len(normalized_host) > 253:
+        raise ValueError("hostname یا IP عمومی نامعتبر است")
+    if normalized_host.endswith(".up.railway.app"):
+        raise ValueError(
+            "این دامنهٔ HTTP پنل است، نه TCP Proxy. در Railway برای پورت داخلی Rathole یک TCP Proxy بسازید و hostname پایان‌یافته با .proxy.rlwy.net را وارد کنید"
+        )
+    try:
+        explicit_port = int(port or 0)
     except (TypeError, ValueError) as exc:
         raise ValueError("پورت عمومی نامعتبر است") from exc
-    if not 1 <= port <= 65535:
+    final_port = explicit_port or int(url_port or 0)
+    if not 1 <= final_port <= 65535:
         raise ValueError("پورت عمومی نامعتبر است")
-    return host, port
+    return normalized_host, final_port
 
 
 def control_endpoint() -> tuple[str, int, str]:

@@ -2595,7 +2595,7 @@ a{color:inherit;text-decoration:none}
         <div><label>پورت خارجی کنترل Railway</label><input class="cm-input" id="rh-manual-control-port" type="number" min="1" max="65535" placeholder="15140"></div>
       </div>
       <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
-        <span class="cm-note" style="margin:0"><i class="ti ti-info-circle"></i><span>در Railway برای پورت داخلی کنترلِ نشان‌داده‌شده پایین، TCP Proxy بساز و hostname:port آن را اینجا وارد کن.</span></span>
+        <span class="cm-note" style="margin:0"><i class="ti ti-info-circle"></i><span>در Railway برای پورت داخلی کنترلِ نشان‌داده‌شده پایین، TCP Proxy بساز و hostname:port آن را اینجا وارد کن. آدرس `https://...up.railway.app` مربوط به صفحهٔ وب پنل است و برای Rathole کاربرد ندارد؛ hostname باید معمولاً با `.proxy.rlwy.net` تمام شود.</span></span>
         <button class="btn btn-p btn-sm" onclick="saveManualRatholeControlEndpoint()"><i class="ti ti-link"></i> ثبت اتصال دو سرور</button>
       </div>
     </div>
@@ -4461,6 +4461,10 @@ async function saveManualRatholeControlEndpoint(){
   try{
     const r=await authF('/api/rathole/control-endpoint',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({host,port})});
     const d=await r.json(); if(!r.ok)throw new Error(d.detail||'ثبت endpoint کنترل ناموفق بود');
+    const savedHost=document.getElementById('rh-manual-control-host');
+    const savedPort=document.getElementById('rh-manual-control-port');
+    if(savedHost) savedHost.value=d.endpoint.host||host;
+    if(savedPort) savedPort.value=d.endpoint.port||port;
     toast(`اتصال دو سرور ثبت شد · ${d.endpoint.host}:${d.endpoint.port}`,'ok');
     await loadRathole();
   }catch(e){toast(e.message||'ثبت endpoint کنترل ناموفق بود','err');}

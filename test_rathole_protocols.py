@@ -119,13 +119,28 @@ def test_manual_control_endpoint_is_used_by_iran_node_snapshot():
     assert rathole_control.STATE["settings"]["publication_mode"] == "manual"
 
 
-def test_manual_control_endpoint_rejects_urls_and_invalid_ports():
+def test_manual_control_endpoint_normalizes_friendly_railway_endpoint_forms():
+    reset_state()
+    assert rathole_control.validate_public_endpoint(
+        "https://shuttle.proxy.rlwy.net:15140", 0
+    ) == ("shuttle.proxy.rlwy.net", 15140)
+    assert rathole_control.validate_public_endpoint(
+        "shuttle.proxy.rlwy.net:15140", 0
+    ) == ("shuttle.proxy.rlwy.net", 15140)
+    assert rathole_control.validate_public_endpoint(
+        "https://shuttle.proxy.rlwy.net", 15140
+    ) == ("shuttle.proxy.rlwy.net", 15140)
+
+
+def test_manual_control_endpoint_rejects_http_panel_domain_and_invalid_ports():
     reset_state()
     try:
-        rathole_control.configure_manual_control_endpoint("https://proxy.example.com", 443)
-        assert False, "URL should not be accepted as a raw TCP endpoint"
-    except ValueError:
-        pass
+        rathole_control.configure_manual_control_endpoint(
+            "https://welf-vita-production.up.railway.app", 8888
+        )
+        assert False, "HTTP Railway application domain must not be used as a TCP proxy"
+    except ValueError as exc:
+        assert "TCP Proxy" in str(exc)
     try:
         rathole_control.configure_manual_control_endpoint("proxy.example.com", 0)
         assert False, "zero port should not be accepted"
