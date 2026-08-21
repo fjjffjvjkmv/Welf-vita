@@ -4280,14 +4280,40 @@ function timeAgoFa(ts){
 let ratholeCache = {settings:{},nodes:[],tunnels:[]};
 let tunnelLinksCache = [];
 let ratholeStatusTimer=null;
+const ratholeDraftIds=new Set([
+  'rh-publication-mode','rh-manual-control-host','rh-manual-control-port',
+  'rh-railway-token','rh-server-port','rh-public-port','rh-transport','rh-nodelay',
+  'tun-link-select','tun-node-select','tun-local-host','tun-local-port',
+  'tun-config-domain','tun-origin-host','tun-origin-port','tun-dns-mode',
+  'tun-external-host','tun-external-port','tun-external-scheme','tun-external-path',
+  'tun-manual-public-host','tun-manual-public-port'
+]);
+const ratholeDraft={};
+function rememberRatholeDraft(event){
+  const el=event.target;
+  if(!el || !ratholeDraftIds.has(el.id)) return;
+  ratholeDraft[el.id]={value:el.type==='checkbox'?el.checked:el.value,checkbox:el.type==='checkbox'};
+}
+function restoreRatholeDraft(){
+  Object.entries(ratholeDraft).forEach(([id,draft])=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    if(draft.checkbox) el.checked=!!draft.value;
+    else el.value=draft.value;
+  });
+}
+function isRatholeFormEditing(){
+  const active=document.activeElement;
+  return !!(active && ratholeDraftIds.has(active.id));
+}
+document.addEventListener('input',rememberRatholeDraft,true);
+document.addEventListener('change',rememberRatholeDraft,true);
 function startRatholeStatusPolling(){
   if(ratholeStatusTimer) return;
   ratholeStatusTimer=setInterval(()=>{
     const pg=document.getElementById('pg-rathole');
-    const active=document.activeElement;
-    const editing=active && ['INPUT','SELECT','TEXTAREA'].includes(active.tagName);
-    if(pg && !pg.classList.contains('hidden') && !editing) loadRathole();
-  },5000);
+    if(pg && !pg.classList.contains('hidden') && !isRatholeFormEditing()) loadRathole();
+  },15000);
 }
 startRatholeStatusPolling();
 function getTunnelFormSelection(){
@@ -4595,6 +4621,10 @@ async function loadRathole(){
     document.getElementById('rh-cf-v4').value=(d.settings.cloudflare_ipv4||[]).join('\n');
     document.getElementById('rh-cf-v6').value=(d.settings.cloudflare_ipv6||[]).join('\n');
     const workflowSelection=getTunnelFormSelection();
+    // Polling must never overwrite values an administrator is entering. Restore
+    // every field marked dirty before rendering mode-dependent controls.
+    restoreRatholeDraft();
+    toggleRatholePublicationMode();
     renderRatholeRailwayStatus(d.railway||{},d.server||{});
     renderRatholeControlStatus(d);
     renderRatholeNodes();
