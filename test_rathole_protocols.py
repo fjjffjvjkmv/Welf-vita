@@ -99,3 +99,35 @@ def test_railway_token_readiness_never_returns_the_token(tmp_path, monkeypatch):
     monkeypatch.setenv("RAILWAY_API_TOKEN", "token-from-environment")
     assert bottokentcpproxy.load_token() == "token-from-environment"
     assert bottokentcpproxy.token_source() == "environment"
+
+
+
+def test_manual_control_endpoint_is_used_by_iran_node_snapshot():
+    reset_state("noise")
+    endpoint = rathole_control.configure_manual_control_endpoint(
+        "Shuttle.Proxy.Rlwy.Net.", 15140
+    )
+    snapshot = rathole_control.node_snapshot("n1")
+
+    assert endpoint == {
+        "host": "shuttle.proxy.rlwy.net",
+        "port": 15140,
+        "mode": "manual",
+    }
+    assert snapshot["server"]["host"] == "shuttle.proxy.rlwy.net"
+    assert snapshot["server"]["port"] == 15140
+    assert rathole_control.STATE["settings"]["publication_mode"] == "manual"
+
+
+def test_manual_control_endpoint_rejects_urls_and_invalid_ports():
+    reset_state()
+    try:
+        rathole_control.configure_manual_control_endpoint("https://proxy.example.com", 443)
+        assert False, "URL should not be accepted as a raw TCP endpoint"
+    except ValueError:
+        pass
+    try:
+        rathole_control.configure_manual_control_endpoint("proxy.example.com", 0)
+        assert False, "zero port should not be accepted"
+    except ValueError:
+        pass

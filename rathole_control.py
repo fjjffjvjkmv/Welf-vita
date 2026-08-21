@@ -25,6 +25,11 @@ STATE: dict[str, Any] = {"nodes": {}, "tunnels": {}, "settings": {}, "secrets": 
 DEFAULT_SETTINGS = {
     "server_bind_port": int(__import__("os").environ.get("RATHOLE_SERVER_PORT", "23333")),
     "public_base_port": int(__import__("os").environ.get("RATHOLE_PUBLIC_PORT", "443")),
+    # Manual is the zero-token default: the administrator creates Railway TCP
+    # proxies in the Railway dashboard once, then only records their endpoints.
+    "publication_mode": "manual",
+    "server_manual_host": "",
+    "server_manual_port": 0,
     "transport": "noise",
     "nodelay": True,
     "keepalive_secs": 20,
@@ -132,6 +137,50 @@ def public_settings() -> dict:
     return settings
 
 
+def validate_public_endpoint(host: str, port: int) -> tuple[str, int]:
+    """Validate a raw TCP endpoint entered by an authenticated administrator."""
+    host = str(host or "").strip().rstrip(".").lower()
+    if not host or len(host) > 253 or any(ch.isspace() for ch in host):
+        raise ValueError("hostname یا IP عمومی نامعتبر است")
+    if any(ch in host for ch in "/\\@?"):
+        raise ValueError("برای endpoint فقط hostname یا IP وارد کنید، نه URL")
+    try:
+        port = int(port)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("پورت عمومی نامعتبر است") from exc
+    if not 1 <= port <= 65535:
+        raise ValueError("پورت عمومی نامعتبر است")
+    return host, port
+
+
+def control_endpoint() -> tuple[str, int, str]:
+    """Return the active publicly reachable Rathole control endpoint."""
+    settings = STATE["settings"]
+    mode = str(settings.get("publication_mode") or "manual")
+    if mode == "manual":
+        return (
+            str(settings.get("server_manual_host") or "").strip().rstrip("."),
+            int(settings.get("server_manual_port") or 0),
+            "manual",
+        )
+    return (
+        str(settings.get("server_public_host") or __import__("os").environ.get("RATHOLE_PUBLIC_HOST", "")).strip().rstrip("."),
+        int(settings.get("server_public_port") or 0),
+        "automatic",
+    )
+
+
+def configure_manual_control_endpoint(host: str, port: int) -> dict:
+    host, port = validate_public_endpoint(host, port)
+    settings = STATE["settings"]
+    settings["publication_mode"] = "manual"
+    settings["server_manual_host"] = host
+    settings["server_manual_port"] = port
+    for node_id in STATE["nodes"]:
+        bump_node(node_id)
+    return {"host": host, "port": port, "mode": "manual"}
+
+
 def _node_signing_secret() -> bytes:
     import os
     secret = os.environ.get("SECRET_KEY", "").strip()
@@ -225,8 +274,8 @@ def node_snapshot(node_id: str) -> dict:
     return {
         "revision": int(STATE["nodes"][node_id].get("desired_revision", 0)),
         "server": {
-            "host": STATE["settings"].get("server_public_host") or __import__("os").environ.get("RATHOLE_PUBLIC_HOST", ""),
-            "port": int(STATE["settings"].get("server_public_port") or STATE["settings"]["server_bind_port"]),
+            "host": control_endpoint()[0],
+            "port": int(control_endpoint()[1] or STATE["settings"]["server_bind_port"]),
             # The Noise public key authenticates the Railway-side Rathole server.
             # The private key is deliberately omitted from every agent response.
             "noise_public_key": noise_public_key(),
@@ -362,7 +411,7 @@ def delete_tunnel(tunnel_id: str) -> bool:
 
 def update_settings(patch: dict) -> dict:
     allowed = {
-        "server_bind_port", "public_base_port", "transport", "nodelay",
+        "server_bind_port", "public_base_port", "publication_mode", "transport", "nodelay",
         "keepalive_secs", "keepalive_interval", "retry_interval", "heartbeat_interval",
         "cloudflare_ipv4", "cloudflare_ipv6", "cloudflare_https_only",
     }
@@ -377,6 +426,10 @@ def update_settings(patch: dict) -> dict:
             if not isinstance(v, list):
                 raise ValueError(f"{k} must be a list")
             v = [str(x).strip() for x in v if str(x).strip()][:500]
+        elif k == "publication_mode":
+            v = str(v or "").strip().lower()
+            if v not in {"manual", "automatic"}:
+                raise ValueError("publication_mode must be manual or automatic")
         elif k == "transport":
             v = str(v or "").strip().lower()
             if v not in {"tcp", "noise"}:

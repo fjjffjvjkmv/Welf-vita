@@ -2576,17 +2576,39 @@ a{color:inherit;text-decoration:none}
   </div>
 
   <div class="card" style="margin-top:16px" id="rathole-railway-card">
-    <div class="card-title"><i class="ti ti-cloud"></i> دسترسی Railway برای TCP Proxy
+    <div class="card-title"><i class="ti ti-plug-connected"></i> اتصال دو سرور
       <span class="badge bg-amber" id="rh-railway-badge" style="margin-right:auto">در حال بررسی...</span>
     </div>
     <div class="g2" style="margin:0">
       <div>
-        <label>Railway API Token</label>
-        <input class="cm-input" id="rh-railway-token" type="password" autocomplete="new-password" spellcheck="false" placeholder="توکن Account یا Workspace را فقط یک‌بار وارد کن">
-        <div class="cm-note" style="margin-top:8px"><i class="ti ti-lock"></i><span id="rh-railway-note">توکن فقط در storage پایدار پنل ذخیره می‌شود و هرگز دوباره در مرورگر نمایش داده نمی‌شود.</span></div>
+        <label>روش اتصال</label>
+        <select class="cm-input" id="rh-publication-mode" onchange="toggleRatholePublicationMode()">
+          <option value="manual" selected>بدون توکن — TCP Proxy دستی Railway</option>
+          <option value="automatic">خودکار — Railway API Token</option>
+        </select>
       </div>
-      <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-p btn-sm" onclick="saveRatholeRailwayToken()"><i class="ti ti-key"></i> ذخیرهٔ توکن Railway</button>
+      <div class="cm-note" style="margin:0"><i class="ti ti-info-circle"></i><span>در حالت بدون توکن فقط یک‌بار TCP Proxy را در داشبورد Railway می‌سازی؛ سپس نود ایران و Railway بدون نیاز به API Token در پنل وصل می‌شوند.</span></div>
+    </div>
+    <div id="rh-manual-access" style="margin-top:12px">
+      <div class="g2" style="margin:0">
+        <div><label>Hostname کنترل Railway</label><input class="cm-input" id="rh-manual-control-host" type="text" spellcheck="false" placeholder="shuttle.proxy.rlwy.net"></div>
+        <div><label>پورت خارجی کنترل Railway</label><input class="cm-input" id="rh-manual-control-port" type="number" min="1" max="65535" placeholder="15140"></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <span class="cm-note" style="margin:0"><i class="ti ti-info-circle"></i><span>در Railway برای پورت داخلی کنترلِ نشان‌داده‌شده پایین، TCP Proxy بساز و hostname:port آن را اینجا وارد کن.</span></span>
+        <button class="btn btn-p btn-sm" onclick="saveManualRatholeControlEndpoint()"><i class="ti ti-link"></i> ثبت اتصال دو سرور</button>
+      </div>
+    </div>
+    <div id="rh-automatic-access" style="display:none;margin-top:12px">
+      <div class="g2" style="margin:0">
+        <div>
+          <label>Railway API Token</label>
+          <input class="cm-input" id="rh-railway-token" type="password" autocomplete="new-password" spellcheck="false" placeholder="توکن Account یا Workspace را فقط یک‌بار وارد کن">
+          <div class="cm-note" style="margin-top:8px"><i class="ti ti-lock"></i><span id="rh-railway-note">توکن فقط در storage پایدار پنل ذخیره می‌شود و هرگز دوباره در مرورگر نمایش داده نمی‌شود.</span></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-p btn-sm" onclick="saveRatholeRailwayToken()"><i class="ti ti-key"></i> ذخیرهٔ توکن Railway</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2697,7 +2719,14 @@ a{color:inherit;text-decoration:none}
             <input class="cm-input" id="tun-external-path" type="text" value="/" placeholder="/">
           </div>
         </div>
-        <div class="cm-note" style="margin-top:8px"><i class="ti ti-info-circle"></i><span>دامنهٔ عمومی باید با CNAME (DNS-only) به hostname ساخته‌شده توسط Railway وصل شود. Railway پورت عمومی اختصاصی می‌دهد؛ پنل همان پورت را خودکار داخل لینک‌های VLESS، Trojan و Shadowsocks می‌نویسد. آدرس بررسی سلامت اختیاری است و فقط برای Ping ذخیره می‌شود.</span></div>
+        <div id="tun-manual-public-endpoint" style="margin-top:12px">
+          <div class="g2" style="margin:0">
+            <div><label>Hostname TCP Proxy سرویس</label><input class="cm-input" id="tun-manual-public-host" type="text" spellcheck="false" placeholder="shuttle.proxy.rlwy.net"></div>
+            <div><label>پورت خارجی TCP Proxy سرویس</label><input class="cm-input" id="tun-manual-public-port" type="number" min="1" max="65535" placeholder="15141"></div>
+          </div>
+          <div class="cm-note" style="margin-top:8px"><i class="ti ti-info-circle"></i><span>بدون توکن: در Railway برای «پورت پیش‌فرض» بالا TCP Proxy بساز و hostname:port آن را اینجا وارد کن. پنل آن را در کانفیگ کاربر قرار می‌دهد.</span></div>
+        </div>
+        <div class="cm-note" style="margin-top:8px"><i class="ti ti-info-circle"></i><span>دامنهٔ عمومی باید با CNAME (DNS-only) به hostname ساخته‌شده توسط Railway وصل شود. Railway پورت عمومی اختصاصی می‌دهد؛ پنل همان پورت را داخل لینک‌های VLESS، Trojan و Shadowsocks می‌نویسد. آدرس بررسی سلامت اختیاری است و فقط برای Ping ذخیره می‌شود.</span></div>
       </div>
     </div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px">
@@ -4353,15 +4382,37 @@ function applyTunnelPresetFromLink(){
   }
   if(info)info.textContent=`${x.label||x.uuid} · ${x.protocol||'—'} · پورت پیشنهادی ${suggested}`;
 }
+function ratholePublicationMode(){
+  return document.getElementById('rh-publication-mode')?.value || ratholeCache?.settings?.publication_mode || 'manual';
+}
+function toggleRatholePublicationMode(){
+  const mode=ratholePublicationMode();
+  const manual=document.getElementById('rh-manual-access');
+  const automatic=document.getElementById('rh-automatic-access');
+  const tunnelManual=document.getElementById('tun-manual-public-endpoint');
+  if(manual) manual.style.display=mode==='manual'?'block':'none';
+  if(automatic) automatic.style.display=mode==='automatic'?'block':'none';
+  if(tunnelManual) tunnelManual.style.display=mode==='manual'?'block':'none';
+}
 function focusRatholeRailwayAccess(){
   const el=document.getElementById('rathole-railway-card');
   if(el) el.scrollIntoView({behavior:'smooth',block:'center'});
-  document.getElementById('rh-railway-token')?.focus();
+  const target=ratholePublicationMode()==='manual'?'rh-manual-control-host':'rh-railway-token';
+  document.getElementById(target)?.focus();
 }
-function renderRatholeRailwayStatus(railway){
+function renderRatholeRailwayStatus(railway,server){
   const badge=document.getElementById('rh-railway-badge');
   const note=document.getElementById('rh-railway-note');
-  if(!badge||!note)return;
+  if(!badge)return;
+  if(ratholePublicationMode()==='manual'){
+    if(server?.control_ready){
+      badge.className='badge bg-green'; badge.textContent='دو سرور متصل‌اند';
+    }else{
+      badge.className='badge bg-red'; badge.textContent='endpoint کنترل لازم است';
+    }
+    return;
+  }
+  if(!note)return;
   if(railway?.ready){
     badge.className='badge bg-green';
     badge.textContent='آماده';
@@ -4377,6 +4428,17 @@ function renderRatholeRailwayStatus(railway){
     note.textContent=railway.context_error||'شناسهٔ سرویس یا environment Railway در دسترس نیست. پنل باید روی همان سرویس Railway اجرا شود.';
   }
 }
+async function saveManualRatholeControlEndpoint(){
+  const host=(document.getElementById('rh-manual-control-host')?.value||'').trim();
+  const port=Number(document.getElementById('rh-manual-control-port')?.value||0);
+  if(!host||!port){toast('hostname و پورت TCP Proxy کنترل را وارد کن','warn');focusRatholeRailwayAccess();return;}
+  try{
+    const r=await authF('/api/rathole/control-endpoint',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({host,port})});
+    const d=await r.json(); if(!r.ok)throw new Error(d.detail||'ثبت endpoint کنترل ناموفق بود');
+    toast(`اتصال دو سرور ثبت شد · ${d.endpoint.host}:${d.endpoint.port}`,'ok');
+    await loadRathole();
+  }catch(e){toast(e.message||'ثبت endpoint کنترل ناموفق بود','err');}
+}
 async function saveRatholeRailwayToken(){
   const field=document.getElementById('rh-railway-token');
   const token=(field?.value||'').trim();
@@ -4386,14 +4448,15 @@ async function saveRatholeRailwayToken(){
     const d=await r.json();
     if(!r.ok) throw new Error(d.detail||'ذخیره توکن Railway ناموفق بود');
     if(field) field.value='';
-    renderRatholeRailwayStatus(d.railway);
+    renderRatholeRailwayStatus(d.railway,ratholeCache?.server);
     toast(d.railway?.ready?'توکن Railway ذخیره شد و TCP Proxy آماده است':'توکن ذخیره شد؛ context سرویس Railway را بررسی کن',d.railway?.ready?'ok':'warn');
     await loadRathole();
   }catch(e){toast(e.message||'ذخیره توکن Railway ناموفق بود','err');}
 }
 async function bootstrapRatholeControl(){
-  if(!ratholeCache?.railway?.ready){
-    toast('ابتدا دسترسی Railway را کامل کن','warn'); focusRatholeRailwayAccess(); return;
+  const manual=ratholePublicationMode()==='manual';
+  if((manual && !ratholeCache?.server?.control_ready) || (!manual && !ratholeCache?.railway?.ready)){
+    toast(manual?'ابتدا endpoint کنترل را در اتصال دو سرور ثبت کن':'ابتدا دسترسی Railway را کامل کن','warn'); focusRatholeRailwayAccess(); return;
   }
   try{
     const r=await authF('/api/rathole/bootstrap',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
@@ -4435,10 +4498,20 @@ async function createTunnelFromWorkflow(){
     toast('اول نود ایران آنلاین را انتخاب کن','warn'); return;
   }
 
-  if(!ratholeCache?.railway?.ready){
-    toast('ابتدا Railway API Token و context سرویس را در بالای صفحه آماده کن','warn');
+  const manual=ratholePublicationMode()==='manual';
+  if((manual && !ratholeCache?.server?.control_ready) || (!manual && !ratholeCache?.railway?.ready)){
+    toast(manual?'ابتدا اتصال دو سرور را در بالای صفحه ثبت کن':'ابتدا Railway API Token و context سرویس را در بالای صفحه آماده کن','warn');
     focusRatholeRailwayAccess();
     return;
+  }
+  if(manual){
+    const publicHost=(document.getElementById('tun-manual-public-host')?.value||'').trim();
+    const publicPort=Number(document.getElementById('tun-manual-public-port')?.value||0);
+    if(!publicHost||!publicPort){
+      toast('برای سرویس، hostname و پورت TCP Proxy Railway را وارد کن','warn');
+      document.getElementById('tun-manual-public-host')?.focus();
+      return;
+    }
   }
 
   const node=ratholeCache.nodes.find(n=>n.node_id===nodeId);
@@ -4479,7 +4552,9 @@ async function createTunnelFromWorkflow(){
         external_host:(document.getElementById('tun-external-host')?.value||'').trim(),
         external_port:Number(document.getElementById('tun-external-port')?.value||0),
         external_scheme:(document.getElementById('tun-external-scheme')?.value||'tcp'),
-        external_path:(document.getElementById('tun-external-path')?.value||'/').trim()
+        external_path:(document.getElementById('tun-external-path')?.value||'/').trim(),
+        manual_public_host:(document.getElementById('tun-manual-public-host')?.value||'').trim(),
+        manual_public_port:Number(document.getElementById('tun-manual-public-port')?.value||0)
       })
     });
     const d=await r.json();
@@ -4510,10 +4585,17 @@ async function loadRathole(){
     document.getElementById('rh-public-port').value=d.settings.public_base_port;
     document.getElementById('rh-nodelay').checked=!!d.settings.nodelay;
     if(document.getElementById('rh-transport')) document.getElementById('rh-transport').value=d.settings.transport||'tcp';
+    const mode=document.getElementById('rh-publication-mode');
+    if(mode) mode.value=d.settings.publication_mode||'manual';
+    const controlHost=document.getElementById('rh-manual-control-host');
+    const controlPort=document.getElementById('rh-manual-control-port');
+    if(controlHost) controlHost.value=d.settings.server_manual_host||'';
+    if(controlPort) controlPort.value=d.settings.server_manual_port||'';
+    toggleRatholePublicationMode();
     document.getElementById('rh-cf-v4').value=(d.settings.cloudflare_ipv4||[]).join('\n');
     document.getElementById('rh-cf-v6').value=(d.settings.cloudflare_ipv6||[]).join('\n');
     const workflowSelection=getTunnelFormSelection();
-    renderRatholeRailwayStatus(d.railway||{});
+    renderRatholeRailwayStatus(d.railway||{},d.server||{});
     renderRatholeControlStatus(d);
     renderRatholeNodes();
     renderTunnelNodeSelect();
@@ -4697,12 +4779,19 @@ async function openRatholeTunnelModal(){
  const protocolRaw=prompt('پروتکل را وارد کن: tcp یا websocket','tcp'); if(protocolRaw===null)return;
  const protocol=protocolRaw.trim().toLowerCase();
  if(!['tcp','websocket'].includes(protocol)){toast('پروتکل فقط tcp یا websocket است','err');return;}
- let websocketPath='/';
- if(protocol==='websocket'){
-   websocketPath=(prompt('مسیر WebSocket:','/')||'/').trim();
-   if(!websocketPath.startsWith('/')) websocketPath='/'+websocketPath;
- }
- try{
+	let websocketPath='/';
+	if(protocol==='websocket'){
+	  websocketPath=(prompt('مسیر WebSocket:','/')||'/').trim();
+	  if(!websocketPath.startsWith('/')) websocketPath='/'+websocketPath;
+	}
+	let manualPublicHost='', manualPublicPort=0;
+	if((ratholeCache?.settings?.publication_mode||'manual')==='manual'){
+	  manualPublicHost=(prompt('Hostname TCP Proxy سرویس در Railway:','')||'').trim();
+	  if(!manualPublicHost)return;
+	  manualPublicPort=Number(prompt('پورت خارجی TCP Proxy سرویس:','')||0);
+	  if(!manualPublicPort){toast('پورت TCP Proxy سرویس نامعتبر است','warn');return;}
+	}
+	try{
    const r=await authF('/api/rathole/tunnels',{
      method:'POST',
      headers:{'Content-Type':'application/json'},
@@ -4714,7 +4803,9 @@ async function openRatholeTunnelModal(){
        public_port:publicPort,
        protocol,
        websocket_path:websocketPath,
-       nodelay:true
+       nodelay:true,
+       manual_public_host:manualPublicHost,
+       manual_public_port:manualPublicPort
      })
    });
    const d=await r.json();
@@ -4727,7 +4818,7 @@ async function deleteRatholeTunnel(id){if(!confirm('تونل حذف شود؟'))r
 async function saveRatholeSettings(){
  const oldPort=Number(document.getElementById('rh-server-port')?.dataset.saved||document.getElementById('rh-server-port').value);
  const newPort=Number(document.getElementById('rh-server-port').value);
- const body={server_bind_port:newPort,public_base_port:Number(document.getElementById('rh-public-port').value),nodelay:document.getElementById('rh-nodelay').checked,transport:document.getElementById('rh-transport')?.value||'tcp'};
+ const body={server_bind_port:newPort,public_base_port:Number(document.getElementById('rh-public-port').value),publication_mode:ratholePublicationMode(),nodelay:document.getElementById('rh-nodelay').checked,transport:document.getElementById('rh-transport')?.value||'tcp'};
  try{
    const r=await authF('/api/rathole/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
    const d=await r.json();
@@ -4736,7 +4827,7 @@ async function saveRatholeSettings(){
    if(d.bootstrap?.ok){
      toast(`پورت کنترل ${newPort} اعمال شد · Proxy جدید آماده است`,'ok');
    }else if(d.port_changed){
-     toast(`پورت ${newPort} ذخیره شد؛ برای ساخت Proxy باید اتصال Railway فعال باشد`,'ok');
+     toast(ratholePublicationMode()==='manual'?`پورت ${newPort} ذخیره شد؛ TCP Proxy کنترل جدید را در Railway بساز و endpoint آن را ثبت کن`:`پورت ${newPort} ذخیره شد؛ برای ساخت Proxy باید اتصال Railway فعال باشد`,'ok');
    }else{
      toast('تنظیمات Rathole ذخیره شد','ok');
    }

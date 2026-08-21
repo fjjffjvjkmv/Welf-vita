@@ -2739,14 +2739,16 @@ async def rathole_status(_=Depends(require_auth)):
     for t in tunnels:
         t.pop("token", None)
     st = dict(STATE["settings"])
+    control_host, control_port, control_mode = rathole_control.control_endpoint()
     return {"settings": public_settings(), "nodes": nodes, "tunnels": tunnels,
             "railway": bottokentcpproxy.railway_prerequisite_status(),
             "server": {
-                "host": st.get("server_public_host") or os.environ.get("RATHOLE_PUBLIC_HOST", ""),
-                "port": int(st.get("server_public_port") or 0),
+                "host": control_host,
+                "port": int(control_port or 0),
                 "control_port": int(st.get("server_bind_port")),
-                "control_ready": bool(st.get("server_public_host") and st.get("server_public_port")),
-                "control_proxy_id": st.get("server_public_proxy_id","") ,
+                "control_ready": bool(control_host and control_port),
+                "control_mode": control_mode,
+                "control_proxy_id": st.get("server_public_proxy_id","") if control_mode == "automatic" else "manual",
             }}
 
 
@@ -2754,6 +2756,22 @@ async def rathole_status(_=Depends(require_auth)):
 async def rathole_railway_status(_=Depends(require_auth)):
     """Return a token-free Railway readiness report for the authenticated UI."""
     return {"ok": True, "railway": bottokentcpproxy.railway_prerequisite_status()}
+
+
+@app.put("/api/rathole/control-endpoint")
+async def rathole_save_manual_control_endpoint(request: Request, _=Depends(require_auth)):
+    """Record a Railway TCP proxy created manually in the Railway dashboard."""
+    body = await request.json()
+    try:
+        endpoint = rathole_control.configure_manual_control_endpoint(
+            str(body.get("host") or ""),
+            int(body.get("port") or 0),
+        )
+        await rathole_control.save()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    log_activity("rathole", f"endpoint کنترل دستی ثبت شد: {endpoint['host']}:{endpoint['port']}", "ok")
+    return {"ok": True, "endpoint": endpoint}
 
 
 @app.put("/api/rathole/railway/token")
@@ -2777,9 +2795,23 @@ async def rathole_save_railway_token(request: Request, _=Depends(require_auth)):
 
 
 async def _ensure_rathole_control_proxy() -> dict:
-    """Ensure Railway has a TCP proxy for the Rathole control port."""
+    """Resolve the Rathole control path in manual or automatic publication mode."""
     st = rathole_control.STATE["settings"]
     port = int(st.get("server_bind_port") or 23333)
+    if str(st.get("publication_mode") or "manual") == "manual":
+        host, proxy_port, _ = rathole_control.control_endpoint()
+        if not host or not proxy_port:
+            raise RuntimeError(
+                f"ابتدا در Railway یک TCP Proxy برای پورت داخلی {port} بسازید و hostname و port آن را در «اتصال دو سرور» ثبت کنید"
+            )
+        return {
+            "ok": True,
+            "host": host,
+            "port": int(proxy_port),
+            "internal_port": port,
+            "proxy_id": "manual",
+            "manual": True,
+        }
     stored_port = int(st.get("server_public_application_port") or 0)
     if (
         stored_port == port
@@ -2918,13 +2950,27 @@ async def rathole_create_tunnel(request: Request, _=Depends(require_auth)):
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        proxy = await bottokentcpproxy.create_public_proxy_for_port(int(t["public_port"]))
+        publish_mode = str(rathole_control.STATE["settings"].get("publication_mode") or "manual")
+        if publish_mode == "manual":
+            manual_host, manual_port = rathole_control.validate_public_endpoint(
+                str(body.get("manual_public_host") or ""),
+                int(body.get("manual_public_port") or 0),
+            )
+            proxy = {
+                "id": "",
+                "domain": manual_host,
+                "port": manual_port,
+                "application_port": int(t["public_port"]),
+            }
+        else:
+            proxy = await bottokentcpproxy.create_public_proxy_for_port(int(t["public_port"]))
         state_tunnel = rathole_control.STATE["tunnels"].get(t["id"])
         if state_tunnel is not None:
             state_tunnel.update({
                 "proxy_id": proxy.get("id") or "",
                 "proxy_domain": proxy.get("domain") or "",
                 "proxy_port": int(proxy.get("port") or 0),
+                "publication_mode": publish_mode,
             })
 
         ext_host = str(body.get("external_host") or "").strip()
@@ -3071,6 +3117,12 @@ async def rathole_update_settings(request: Request, _=Depends(require_auth)):
 
     new_port = int(settings.get("server_bind_port") or old_port)
     port_changed = new_port != old_port
+
+    # A manual Railway TCP Proxy targets one internal port. Clear the recorded
+    # endpoint if that target changes so a node never reconnects to the wrong port.
+    if port_changed and settings.get("publication_mode") == "manual":
+        rathole_control.STATE["settings"]["server_manual_host"] = ""
+        rathole_control.STATE["settings"]["server_manual_port"] = 0
 
     # Changing the Rathole control port invalidates the old Railway public proxy.
     # Clear its metadata first, then optionally recreate it automatically.
