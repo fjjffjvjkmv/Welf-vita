@@ -20,12 +20,12 @@ from typing import Any
 DATA_DIR = Path(__import__("os").environ.get("DATA_DIR", "/data"))
 FILE = DATA_DIR / "rathole_control.json"
 LOCK = asyncio.Lock()
-STATE: dict[str, Any] = {"nodes": {}, "tunnels": {}, "settings": {}}
+STATE: dict[str, Any] = {"nodes": {}, "tunnels": {}, "settings": {}, "secrets": {}}
 
 DEFAULT_SETTINGS = {
     "server_bind_port": int(__import__("os").environ.get("RATHOLE_SERVER_PORT", "23333")),
     "public_base_port": int(__import__("os").environ.get("RATHOLE_PUBLIC_PORT", "443")),
-    "transport": "tcp",
+    "transport": "noise",
     "nodelay": True,
     "keepalive_secs": 20,
     "keepalive_interval": 8,
@@ -37,9 +37,52 @@ DEFAULT_SETTINGS = {
     "server_public_host": "",
     "server_public_port": 0,
     "server_public_proxy_id": "",
-    "server_public_application_port": 0,
-}
+        "server_public_application_port": 0,
+    }
 STATE["settings"].update(DEFAULT_SETTINGS)
+
+
+def _noise_keypair() -> tuple[str, str]:
+    """Create a Rathole-compatible X25519 keypair encoded as standard Base64."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
+    private_key = X25519PrivateKey.generate()
+    private_raw = private_key.private_bytes(
+        serialization.Encoding.Raw,
+        serialization.PrivateFormat.Raw,
+        serialization.NoEncryption(),
+    )
+    public_raw = private_key.public_key().public_bytes(
+        serialization.Encoding.Raw,
+        serialization.PublicFormat.Raw,
+    )
+    return (
+        base64.b64encode(private_raw).decode("ascii"),
+        base64.b64encode(public_raw).decode("ascii"),
+    )
+
+
+def ensure_noise_keys() -> dict[str, str]:
+    """Return a persistent server Noise keypair, creating it only when needed.
+
+    The private half stays in the state file under ``secrets`` and is never
+    returned by the status or agent APIs. Nodes receive the public half only.
+    """
+    secrets_state = STATE.setdefault("secrets", {})
+    private_key = str(secrets_state.get("noise_private_key") or "").strip()
+    public_key = str(secrets_state.get("noise_public_key") or "").strip()
+    if not private_key or not public_key:
+        private_key, public_key = _noise_keypair()
+        secrets_state["noise_private_key"] = private_key
+        secrets_state["noise_public_key"] = public_key
+    return {"private_key": private_key, "public_key": public_key}
+
+
+def noise_public_key() -> str:
+    if STATE.get("settings", {}).get("transport") != "noise":
+        return ""
+    return ensure_noise_keys()["public_key"]
 
 
 def _now() -> float:
@@ -61,10 +104,14 @@ async def load() -> None:
                 STATE.setdefault("nodes", {})
                 STATE.setdefault("tunnels", {})
                 STATE.setdefault("settings", {})
+                STATE.setdefault("secrets", {})
                 for k, v in DEFAULT_SETTINGS.items():
                     STATE["settings"].setdefault(k, v)
     except Exception:
-        STATE = {"nodes": {}, "tunnels": {}, "settings": dict(DEFAULT_SETTINGS)}
+        STATE = {"nodes": {}, "tunnels": {}, "settings": dict(DEFAULT_SETTINGS), "secrets": {}}
+    if STATE["settings"].get("transport") == "noise":
+        ensure_noise_keys()
+        await save()
 
 
 async def save() -> None:
@@ -76,7 +123,13 @@ async def save() -> None:
 
 
 def public_settings() -> dict:
-    return dict(STATE["settings"])
+    """Return settings that are safe for the browser and node-control API."""
+    settings = dict(STATE["settings"])
+    settings["noise_ready"] = bool(
+        STATE.get("settings", {}).get("transport") != "noise"
+        or (STATE.get("secrets", {}).get("noise_private_key") and STATE.get("secrets", {}).get("noise_public_key"))
+    )
+    return settings
 
 
 def _node_signing_secret() -> bytes:
@@ -150,6 +203,23 @@ def auth_node(node_id: str, token: str) -> dict | None:
     return None
 
 
+def node_supports_noise(node: dict) -> bool:
+    """Return whether a reported agent version understands Noise snapshots.
+
+    An unreported version is treated as install-pending so a newly created node
+    can be configured before its first bootstrap. Existing agents below 2.2
+    must be reinstalled before the transport can be upgraded.
+    """
+    raw = str(node.get("agent_version") or "").strip()
+    if not raw:
+        return True
+    try:
+        parts = tuple(int(p) for p in raw.split(".")[:2])
+        return parts >= (2, 2)
+    except ValueError:
+        return False
+
+
 def node_snapshot(node_id: str) -> dict:
     tunnels = [dict(t) for t in STATE["tunnels"].values() if t.get("node_id") == node_id and t.get("enabled", True)]
     return {
@@ -157,6 +227,9 @@ def node_snapshot(node_id: str) -> dict:
         "server": {
             "host": STATE["settings"].get("server_public_host") or __import__("os").environ.get("RATHOLE_PUBLIC_HOST", ""),
             "port": int(STATE["settings"].get("server_public_port") or STATE["settings"]["server_bind_port"]),
+            # The Noise public key authenticates the Railway-side Rathole server.
+            # The private key is deliberately omitted from every agent response.
+            "noise_public_key": noise_public_key(),
         },
         "settings": public_settings(),
         "tunnels": tunnels,
@@ -305,9 +378,12 @@ def update_settings(patch: dict) -> dict:
                 raise ValueError(f"{k} must be a list")
             v = [str(x).strip() for x in v if str(x).strip()][:500]
         elif k == "transport":
-            if v not in {"tcp"}:
+            v = str(v or "").strip().lower()
+            if v not in {"tcp", "noise"}:
                 raise ValueError("transport must be tcp or noise")
         STATE["settings"][k] = v
+    if STATE["settings"].get("transport") == "noise":
+        ensure_noise_keys()
     for nid in STATE["nodes"]:
         bump_node(nid)
     return public_settings()

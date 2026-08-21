@@ -540,19 +540,29 @@ def tunnel_for_link(link_id: str) -> dict | None:
         pass
     return None
 
-def public_config_host(link_id: str, fallback_host: str) -> str:
-    """Host shown inside the client config.
+def public_config_endpoint(link_id: str, fallback_host: str, fallback_port: int = 443) -> tuple[str, int]:
+    """Return the host and externally reachable port for a client config.
 
-    A tunnel-bound config uses its configured Iranian/Cloudflare hostname.
-    Otherwise the normal panel host remains the fallback.
+    A custom configuration domain is only an alias for Railway's TCP proxy;
+    Railway assigns the public port independently of the internal Rathole
+    service port. Publishing both values prevents generated 3x-ui-compatible
+    links from silently reverting to ``:443`` after a tunnel is attached.
     """
     t = tunnel_for_link(link_id)
-    h = str((t or {}).get("config_domain") or "").strip()
-    return h.rstrip(".") if h else fallback_host
+    configured_host = str((t or {}).get("config_domain") or "").strip().rstrip(".")
+    railway_host = str((t or {}).get("proxy_domain") or "").strip().rstrip(".")
+    published_port = int((t or {}).get("proxy_port") or 0)
+    return configured_host or railway_host or fallback_host, published_port or int(fallback_port)
+
+
+def public_config_host(link_id: str, fallback_host: str) -> str:
+    """Compatibility helper for callers that need only the public host."""
+    return public_config_endpoint(link_id, fallback_host)[0]
+
 
 def generate_share_link(uuid: str, host: str, remark: str = "", protocol: str = DEFAULT_PROTOCOL) -> str:
     link = LINKS.get(uuid) or {}
-    host = public_config_host(uuid, host)
+    host, public_port = public_config_endpoint(uuid, host)
     # The client-visible title always follows the user/configuration name policy,
     # even for legacy callers that used to pass an `RVG-...` remark.
     remark = client_display_label(uuid, link) if link else clean_public_label(remark, uuid)
@@ -567,13 +577,13 @@ def generate_share_link(uuid: str, host: str, remark: str = "", protocol: str = 
         pub_host = link.get("mtproto_public_host")
         pub_port = link.get("mtproto_public_port")
         final_host = pub_host or host
-        final_port = pub_port or port
+        final_port = pub_port or public_port or port
         return f"{mtproto.generate_mtproto_link(final_host, final_port, secret).split('#', 1)[0]}#{quote(remark)}"
 
     if protocol == "shadowsocks":
         cipher = link.get("ss_cipher", DEFAULT_CIPHER)
         password = link.get("ss_password", "")
-        return generate_ss_link(host, 443, cipher, password, remark)
+        return generate_ss_link(host, public_port, cipher, password, remark)
 
     if protocol == "trojan-ws":
         params = {
@@ -581,7 +591,7 @@ def generate_share_link(uuid: str, host: str, remark: str = "", protocol: str = 
             "path": "/trojan-ws", "sni": host, "fp": fp, "alpn": alpn,
         }
         query = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
-        return f"trojan://{uuid}@{host}:443?{query}#{quote(remark)}"
+        return f"trojan://{uuid}@{host}:{public_port}?{query}#{quote(remark)}"
 
     if protocol.startswith("trojan-xhttp-"):
         mode = protocol.replace("trojan-xhttp-", "")
@@ -591,7 +601,7 @@ def generate_share_link(uuid: str, host: str, remark: str = "", protocol: str = 
             "path": path, "sni": host, "fp": fp, "alpn": alpn,
         }
         query = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
-        return f"trojan://{uuid}@{host}:443?{query}#{quote(remark)}"
+        return f"trojan://{uuid}@{host}:{public_port}?{query}#{quote(remark)}"
 
     if protocol == "vless-ws":
         path = f"/ws/{uuid}"
@@ -620,7 +630,7 @@ def generate_share_link(uuid: str, host: str, remark: str = "", protocol: str = 
             "alpn": alpn,
         }
     query = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
-    return f"vless://{uuid}@{host}:443?{query}#{quote(remark)}"
+    return f"vless://{uuid}@{host}:{public_port}?{query}#{quote(remark)}"
 
 def uptime() -> str:
     secs = int(time.time() - stats["start_time"])
@@ -3011,6 +3021,19 @@ async def rathole_delete_tunnel(tunnel_id: str, _=Depends(require_auth)):
 @app.patch("/api/rathole/settings")
 async def rathole_update_settings(request: Request, _=Depends(require_auth)):
     body = await request.json()
+    requested_transport = str(body.get("transport") or rathole_control.STATE["settings"].get("transport") or "tcp").strip().lower()
+    if requested_transport == "noise":
+        outdated = [
+            str(node.get("label") or node_id)
+            for node_id, node in rathole_control.STATE["nodes"].items()
+            if not rathole_control.node_supports_noise(node)
+        ]
+        if outdated:
+            joined = "، ".join(outdated[:5])
+            raise HTTPException(
+                status_code=409,
+                detail=f"برای فعال‌سازی Noise ابتدا عامل Rathole این نودها را با فرمان نصب جدید به نسخهٔ 2.2 ارتقا بدهید: {joined}",
+            )
     old_port = int(rathole_control.STATE["settings"].get("server_bind_port") or 23333)
     try:
         settings = rathole_control.update_settings(body)

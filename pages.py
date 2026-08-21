@@ -2570,7 +2570,7 @@ a{color:inherit;text-decoration:none}
     <div class="tunnel-steps">
       <div class="tunnel-step"><span>۱</span><b>کانفیگ آماده</b><small>یک کانفیگ موجود را انتخاب یا در صفحه کانفیگ‌ها بساز</small></div>
       <div class="tunnel-step"><span>۲</span><b>انتشار پورت</b><small>برای سرویس انتخاب‌شده TCP Proxy بساز</small></div>
-      <div class="tunnel-step"><span>۳</span><b>دامنه خارج تونل</b><small>دامنه/Endpoint نهایی را اینجا وارد کن</small></div>
+      <div class="tunnel-step"><span>۳</span><b>دامنه عمومی</b><small>دامنه‌ای که کلاینت به آن وصل می‌شود را به TCP Proxy متصل کن</small></div>
       <div class="tunnel-step"><span>۴</span><b>اتصال و Ping</b><small>اتصال را ثبت کن و latency را از Railway تست بگیر</small></div>
     </div>
   </div>
@@ -2602,15 +2602,15 @@ a{color:inherit;text-decoration:none}
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap">
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="rh-nodelay" checked> TCP_NODELAY</label>
-        <label style="display:flex;gap:7px;align-items:center">ترابرد Rathole <select class="cm-input" id="rh-transport" style="width:100px"><option value="tcp" selected>TCP</option></select></label>
+        <label style="display:flex;gap:7px;align-items:center">ترابرد Rathole <select class="cm-input" id="rh-transport" style="width:120px"><option value="noise" selected>Noise (رمزنگاری)</option><option value="tcp">TCP</option></select></label>
         <button class="btn btn-p" style="margin-right:auto" onclick="saveRatholeSettings()"><i class="ti ti-device-floppy"></i> ذخیره</button>
       </div>
     </div>
   </div>
 
   <div class="card" style="margin-top:16px">
-    <div class="card-title"><i class="ti ti-route"></i> اتصال سریع تانل
-      <span class="badge bg-green" style="margin-right:auto">بدون لایه اضافه در مسیر داده</span>
+      <div class="card-title"><i class="ti ti-route"></i> اتصال سریع تانل
+      <span class="badge bg-green" style="margin-right:auto">مسیر داده: Railway ← Noise/Rathole ← نود ایران</span>
     </div>
     <div class="g2" style="margin:0">
       <div>
@@ -2631,20 +2631,20 @@ a{color:inherit;text-decoration:none}
         <input class="cm-input" id="tun-local-port" type="number" min="1" max="65535" value="443">
       </div>
       <div style="grid-column:1/-1">
-        <div class="card-title" style="font-size:12px;margin:8px 0"><i class="ti ti-world"></i> دامنه Config و Origin خارج</div>
+        <div class="card-title" style="font-size:12px;margin:8px 0"><i class="ti ti-world"></i> دامنهٔ اتصال کلاینت و بررسی سلامت</div>
         <div class="g2" style="margin:0">
           <div>
-            <label>دامنه‌ای که داخل Config نشان داده می‌شود</label>
+            <label>دامنهٔ عمومی داخل Config</label>
             <input class="cm-input" id="tun-config-domain" type="text" placeholder="ir.example.com">
           </div>
           <div>
-            <label>Origin خارج</label>
-            <input class="cm-input" id="tun-origin-host" type="text" placeholder="foreign.example.com">
+            <label>Origin مرجع (فقط برای ثبت مشخصات)</label>
+            <input class="cm-input" id="tun-origin-host" type="text" placeholder="origin.example.com">
           </div>
         </div>
         <div class="g2" style="margin:10px 0 0">
           <div>
-            <label>پورت Origin</label>
+            <label>پورت Origin مرجع</label>
             <input class="cm-input" id="tun-origin-port" type="number" min="1" max="65535" value="443">
           </div>
           <div>
@@ -2657,7 +2657,7 @@ a{color:inherit;text-decoration:none}
         </div>
         <div class="g2" style="margin:10px 0 0">
           <div>
-            <label>دامنه/Endpoint تست</label>
+            <label>دامنه/Endpoint بررسی سلامت</label>
             <input class="cm-input" id="tun-external-host" type="text" placeholder="ir.example.com">
           </div>
           <div>
@@ -2681,7 +2681,7 @@ a{color:inherit;text-decoration:none}
             <input class="cm-input" id="tun-external-path" type="text" value="/" placeholder="/">
           </div>
         </div>
-        <div class="cm-note" style="margin-top:8px"><i class="ti ti-info-circle"></i><span>دامنه/Endpoint اختیاری است؛ اگر وارد شود، همراه ساخت تونل ذخیره می‌شود و بعد از انتشار می‌توانی همان را Ping کنی.</span></div>
+        <div class="cm-note" style="margin-top:8px"><i class="ti ti-info-circle"></i><span>دامنهٔ عمومی باید با CNAME (DNS-only) به hostname ساخته‌شده توسط Railway وصل شود. Railway پورت عمومی اختصاصی می‌دهد؛ پنل همان پورت را خودکار داخل لینک‌های VLESS، Trojan و Shadowsocks می‌نویسد. آدرس بررسی سلامت اختیاری است و فقط برای Ping ذخیره می‌شود.</span></div>
       </div>
     </div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px">

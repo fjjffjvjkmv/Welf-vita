@@ -1,7 +1,8 @@
 from __future__ import annotations
 import asyncio, json, os, shutil, signal
 from pathlib import Path
-from rathole_control import STATE, FILE, load
+import rathole_control
+from rathole_control import load
 
 BASE = Path(os.environ.get('RATHOLE_DIR','/data/rathole'))
 BIN = Path(os.environ.get('RATHOLE_BIN','/usr/local/bin/rathole'))
@@ -14,7 +15,7 @@ def q(v):
     return '"' + str(v).replace('\\','\\\\').replace('"','\\"') + '"'
 
 def render():
-    st = STATE['settings']
+    st = rathole_control.STATE['settings']
     lines = [
         '[server]',
         f"bind_addr = {q('0.0.0.0:' + str(int(st['server_bind_port'])))}",
@@ -28,8 +29,17 @@ def render():
         f"keepalive_secs = {max(5,int(st.get('keepalive_secs',20)))}",
         f"keepalive_interval = {max(3,int(st.get('keepalive_interval',8)))}",
     ]
+    if st.get('transport') == 'noise':
+        # Rathole's default Noise_NK pattern needs only the server's private
+        # key here; clients validate it with the public key from the snapshot.
+        keys = rathole_control.ensure_noise_keys()
+        lines += [
+            '',
+            '[server.transport.noise]',
+            f"local_private_key = {q(keys['private_key'])}",
+        ]
     # WebSocket is intentionally transported as raw TCP by Rathole; no HTTP parsing is inserted in the data path.
-    for t in STATE['tunnels'].values():
+    for t in rathole_control.STATE['tunnels'].values():
         if not t.get('enabled',True):
             continue
         name = ''.join(c if c.isalnum() or c=='_' else '_' for c in t['id'])

@@ -75,6 +75,15 @@ def make_config(snapshot: dict) -> str:
         f"keepalive_secs = {max(5, int(st.get('keepalive_secs', 20)))}",
         f"keepalive_interval = {max(3, int(st.get('keepalive_interval', 8)))}",
     ]
+    if st.get("transport") == "noise":
+        server_public_key = str(server.get("noise_public_key") or "").strip()
+        if not server_public_key:
+            raise RuntimeError("Noise is enabled but the server public key is missing")
+        lines += [
+            "",
+            "[client.transport.noise]",
+            f"remote_public_key = {toml_s(server_public_key)}",
+        ]
     # WebSocket uses Rathole transport type "tcp"; the WebSocket handshake/data stays transparent end-to-end.
     for t in snapshot.get("tunnels", []):
         name = ''.join(c if c.isalnum() or c == '_' else '_' for c in t['id'])
@@ -114,7 +123,7 @@ def main():
             except Exception:
                 client_active = False
             meta = {
-                "agent_version": "2.1",
+                "agent_version": "2.2",
                 "hostname": socket.gethostname(),
                 "platform": f"{platform.system()} {platform.release()}",
                 "public_ip": "",
