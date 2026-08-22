@@ -191,3 +191,12 @@ def test_server_config_has_services_table_before_first_tunnel():
     reset_state("noise")
     config = rathole_server_manager.render()
     assert "[server.services]" in config
+
+
+
+def test_legacy_railway_healthcheck_path_returns_success():
+    import asyncio
+
+    payload = asyncio.run(main.railway_legacy_healthcheck())
+    assert payload["status"] == "ok"
+    assert payload["service"] == "rvg-gateway"

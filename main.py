@@ -949,6 +949,17 @@ async def root():
 async def health():
     return {"status": "ok", "connections": len(connections), "uptime": uptime()}
 
+
+@app.get("/api/register", include_in_schema=False)
+async def railway_legacy_healthcheck():
+    """Compatibility health endpoint for an existing Railway health-check path.
+
+    Some deployments were configured to probe `/api/register`; that route was
+    not part of this application and returned 404 despite Uvicorn being ready.
+    Keeping this lightweight GET endpoint prevents a false unhealthy state.
+    """
+    return {"status": "ok", "service": "rvg-gateway", "uptime": uptime()}
+
 # ── Subscription (single link) ────────────────────────────────────────────────
 @app.get("/sub/{uuid}")
 async def subscription_single(uuid: str, request: Request):
