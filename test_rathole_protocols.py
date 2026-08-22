@@ -72,8 +72,9 @@ def test_client_endpoint_uses_railway_proxy_host_and_port():
 
     tunnel_state["config_domain"] = "ir.example.com."
     host, port = main.public_config_endpoint("subscription-link", "panel.example.com")
-    assert host == "ir.example.com"
+    assert host == "service.proxy.rlwy.net"
     assert port == 15432
+    assert main.public_config_sni("subscription-link", host) == "ir.example.com"
 
 
 
@@ -146,3 +147,40 @@ def test_manual_control_endpoint_rejects_http_panel_domain_and_invalid_ports():
         assert False, "zero port should not be accepted"
     except ValueError:
         pass
+
+
+
+def test_client_link_connects_to_proxy_but_preserves_custom_tls_sni():
+    reset_state()
+    tunnel = rathole_control.add_tunnel("n1", "xui", "127.0.0.1", 443, 18443)
+    rathole_control.STATE["tunnels"][tunnel["id"]].update(
+        {
+            "link_id": "link-proxy-test",
+            "proxy_domain": "service.proxy.rlwy.net",
+            "proxy_port": 15432,
+            "config_domain": "edge.example.com",
+        }
+    )
+    main.LINKS["link-proxy-test"] = {
+        "protocol": "vless-ws", "label": "Proxy test", "alpn": "h2", "fingerprint": "chrome"
+    }
+    try:
+        uri = main.generate_share_link("link-proxy-test", "panel.example.com", protocol="vless-ws")
+        assert "@service.proxy.rlwy.net:15432?" in uri
+        assert "sni=edge.example.com" in uri
+        assert "host=edge.example.com" in uri
+    finally:
+        main.LINKS.pop("link-proxy-test", None)
+
+
+def test_agent_reports_local_target_failures_to_control_plane():
+    reset_state()
+    tunnel = rathole_control.add_tunnel("n1", "xui", "127.0.0.1", 443, 18443)
+    probe = rathole_agent_v2.probe_local_tunnels(
+        {"tunnels": [{"id": tunnel["id"], "local_host": "127.0.0.1", "local_port": 0}]}
+    )
+    assert probe[0]["ok"] is False
+    rathole_control.touch_node("n1", {"local_tunnels": probe})
+    state_tunnel = rathole_control.STATE["tunnels"][tunnel["id"]]
+    assert state_tunnel["local_service_ok"] is False
+    assert state_tunnel["last_local_probe_error"]

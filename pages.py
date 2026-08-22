@@ -4679,6 +4679,8 @@ function renderRatholeTunnels(){
    const n=ratholeCache.nodes.find(x=>x.node_id===t.node_id);
    const isWs=String(t.protocol||'tcp')==='websocket';
    const published=t.proxy_domain?`${t.proxy_domain}:${t.proxy_port}`:'در انتظار Railway';
+   const publicTcp=t.public_tcp_open===true?'TCP بیرون باز':t.public_tcp_open===false?'TCP بیرون بسته':'TCP تست نشده';
+   const localService=t.local_service_ok===true?'3x-ui ایران آماده':t.local_service_ok===false?'3x-ui ایران در دسترس نیست':'3x-ui ایران تست نشده';
    const extHost=t.external_host||'';
    const extPort=t.external_port||t.proxy_port||443;
    const extScheme=t.external_scheme|| (isWs?'wss':'tcp');
@@ -4690,13 +4692,15 @@ function renderRatholeTunnels(){
          <div style="font-size:10px;color:var(--t3);margin-top:4px">${rEsc(n?.label||t.node_id)} · ${isWs?'WebSocket':'TCP'} · ایران :${t.local_port}</div>
        </div>
        <div style="display:flex;gap:6px;align-items:center">${isWs?'<span class="badge bg-green">WebSocket</span>':'<span class="badge bg-blue">TCP</span>'}
-         <span class="badge ${t.connection_status==='online'?'bg-green':t.connection_status==='error'?'bg-red':'bg-amber'}">${rEsc(t.connection_status||'not-configured')}</span>
+         <span class="badge ${t.public_tcp_open===true?'bg-green':t.public_tcp_open===false?'bg-red':'bg-amber'}">${rEsc(publicTcp)}</span>
+         <span class="badge ${t.local_service_ok===true?'bg-green':t.local_service_ok===false?'bg-red':'bg-amber'}">${rEsc(localService)}</span>
          <button class="btn btn-g btn-sm" onclick="deleteRatholeTunnel('${rEsc(t.id)}')"><i class="ti ti-trash"></i></button>
        </div>
      </div>
      <div class="g2" style="margin:14px 0 0">
        <div class="cl" style="margin:0"><i class="ti ti-world"></i><span>پورت منتشرشده: <b>${rEsc(published)}</b></span></div>
-       <div class="cl" style="margin:0"><i class="ti ti-brand-cloudflare"></i><span>دامنه Config: <b>${t.config_domain? rEsc(t.config_domain):'تنظیم نشده'}</b></span></div>
+       <div class="cl" style="margin:0"><i class="ti ti-server"></i><span>سرویس محلی ایران: <b>${rEsc(t.local_host||'127.0.0.1')}:${rEsc(t.local_port)}</b> · ${rEsc(localService)}${t.last_local_probe_error?` · ${rEsc(t.last_local_probe_error)}`:''}</span></div>
+       <div class="cl" style="margin:0"><i class="ti ti-brand-cloudflare"></i><span>نام TLS/SNI کانفیگ: <b>${t.config_domain? rEsc(t.config_domain):rEsc(t.proxy_domain||'Railway Proxy')}</b></span></div>
        <div class="cl" style="margin:0"><i class="ti ti-world"></i><span>Origin خارج: <b>${t.origin_host? rEsc(t.origin_host+':'+(t.origin_port||443)):'تنظیم نشده'}</b></span></div>
        <div class="cl" style="margin:0"><i class="ti ti-dns"></i><span>DNS Target: <b>${t.proxy_domain? rEsc(t.proxy_domain+':'+(t.proxy_port||443)):'در انتظار Public Proxy'}</b></span></div>
      </div>
@@ -4756,8 +4760,8 @@ async function pingTunnel(id){
   try{
     const r=await authF('/api/rathole/tunnels/'+encodeURIComponent(id)+'/ping',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     const d=await r.json();
-    if(d.ok){toast(`اتصال برقرار است · ${d.latency_ms} ms`,'ok');}
-    else{toast(`Ping ناموفق · ${d.error||'خطا'}`,'err');}
+    if(d.ok){toast(`فقط TCP بیرون باز است · ${d.latency_ms} ms. وضعیت «3x-ui ایران آماده» را نیز سبز بررسی کن.`,'warn');}
+    else{toast(`TCP بیرون در دسترس نیست · ${d.error||'خطا'}`,'err');}
     loadRathole();
   }catch(e){toast(e.message||'خطا','err')}
 }

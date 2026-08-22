@@ -30,7 +30,7 @@ def http_json(path: str, payload: dict | None = None):
         "-X", "POST" if payload is not None else "GET",
         "-H", "Accept: application/json",
         "-H", "Content-Type: application/json",
-        "-H", "User-Agent: RVG-Rathole-Agent/2.0",
+        "-H", "User-Agent: RVG-Rathole-Agent/2.3",
         "-H", f"X-RVG-Node-Id: {NODE_ID}",
         "-H", f"X-RVG-Node-Token: {NODE_TOKEN}",
         "-w", "\n__RVG_HTTP_STATUS__:%{http_code}",
@@ -98,6 +98,34 @@ def make_config(snapshot: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def probe_local_tunnels(snapshot: dict) -> list[dict]:
+    """Check whether each configured local target accepts TCP on the Iran node."""
+    results: list[dict] = []
+    for tunnel in snapshot.get("tunnels", []):
+        started = time.monotonic()
+        host = str(tunnel.get("local_host") or "127.0.0.1")
+        try:
+            port = int(tunnel.get("local_port") or 0)
+            if not 1 <= port <= 65535:
+                raise ValueError("invalid local port")
+            with socket.create_connection((host, port), timeout=3):
+                pass
+            results.append({
+                "id": str(tunnel.get("id") or ""),
+                "ok": True,
+                "latency_ms": round((time.monotonic() - started) * 1000, 2),
+                "error": "",
+            })
+        except Exception as exc:
+            results.append({
+                "id": str(tunnel.get("id") or ""),
+                "ok": False,
+                "latency_ms": round((time.monotonic() - started) * 1000, 2),
+                "error": str(exc)[:500],
+            })
+    return results
+
+
 def restart_client(cfg: str):
     BASE.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix="client-", suffix=".toml", dir=BASE)
@@ -113,6 +141,7 @@ def main():
         return 2
     print(f"[agent] v2 starting | panel={PANEL_URL} | node={NODE_ID}", flush=True)
     applied = 0
+    last_snapshot: dict = {"tunnels": []}
     while True:
         try:
             try:
@@ -123,16 +152,18 @@ def main():
             except Exception:
                 client_active = False
             meta = {
-                "agent_version": "2.2",
+                "agent_version": "2.3",
                 "hostname": socket.gethostname(),
                 "platform": f"{platform.system()} {platform.release()}",
                 "public_ip": "",
                 "applied_revision": applied,
                 "rathole_client_active": client_active,
+                "local_tunnels": probe_local_tunnels(last_snapshot),
             }
             status, snap = http_json("/api/rathole/agent/next", meta)
             if status != 200:
                 raise RuntimeError(f"HTTP {status}")
+            last_snapshot = snap if isinstance(snap, dict) else {"tunnels": []}
             revision = int(snap.get("revision", 0))
             print(f"[agent] heartbeat OK | revision={revision} | tunnels={len(snap.get('tunnels', []))}", flush=True)
             if revision != applied:

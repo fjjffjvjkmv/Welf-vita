@@ -220,11 +220,12 @@ async def _find_matching_ss_link(first_bytes: bytes):
 # shadowsocks_ws_tunnel و توابع relay آن به protocol/shadowsocks/websocket.py منتقل شدند.
 
 
-def generate_ss_link(host: str, port: int, cipher: str, password: str, remark: str) -> str:
-    """ss://base64(method:password)@host:port?plugin=...#remark — با پلاگین v2ray-plugin برای WS+TLS"""
+def generate_ss_link(host: str, port: int, cipher: str, password: str, remark: str, plugin_host: str | None = None) -> str:
+    """Build a Shadowsocks WS+TLS URI with separate socket and TLS/Host names."""
     import base64
     from urllib.parse import quote
 
     userinfo = base64.urlsafe_b64encode(f"{cipher}:{password}".encode()).decode().rstrip("=")
-    plugin = quote(f"v2ray-plugin;tls;mux=0;path=/ss-ws;host={host}")
+    tls_host = str(plugin_host or host)
+    plugin = quote(f"v2ray-plugin;tls;mux=0;path=/ss-ws;host={tls_host}")
     return f"ss://{userinfo}@{host}:{port}/?plugin={plugin}#{quote(remark)}"

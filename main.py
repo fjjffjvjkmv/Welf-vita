@@ -541,28 +541,35 @@ def tunnel_for_link(link_id: str) -> dict | None:
     return None
 
 def public_config_endpoint(link_id: str, fallback_host: str, fallback_port: int = 443) -> tuple[str, int]:
-    """Return the host and externally reachable port for a client config.
+    """Return the actual TCP socket endpoint for a client config.
 
-    A custom configuration domain is only an alias for Railway's TCP proxy;
-    Railway assigns the public port independently of the internal Rathole
-    service port. Publishing both values prevents generated 3x-ui-compatible
-    links from silently reverting to ``:443`` after a tunnel is attached.
+    A custom ``config_domain`` may be used as TLS SNI only after its DNS record
+    is configured. The client must still connect to Railway's assigned TCP
+    proxy hostname and port; using a custom domain directly creates a false
+    success in a bare TCP Ping when its DNS/CNAME is not ready.
     """
     t = tunnel_for_link(link_id)
-    configured_host = str((t or {}).get("config_domain") or "").strip().rstrip(".")
     railway_host = str((t or {}).get("proxy_domain") or "").strip().rstrip(".")
     published_port = int((t or {}).get("proxy_port") or 0)
-    return configured_host or railway_host or fallback_host, published_port or int(fallback_port)
+    return railway_host or fallback_host, published_port or int(fallback_port)
+
+
+def public_config_sni(link_id: str, connect_host: str) -> str:
+    """Return the optional TLS name while keeping socket routing deterministic."""
+    t = tunnel_for_link(link_id)
+    configured_host = str((t or {}).get("config_domain") or "").strip().rstrip(".")
+    return configured_host or connect_host
 
 
 def public_config_host(link_id: str, fallback_host: str) -> str:
-    """Compatibility helper for callers that need only the public host."""
+    """Compatibility helper for callers that need only the TCP connection host."""
     return public_config_endpoint(link_id, fallback_host)[0]
 
 
 def generate_share_link(uuid: str, host: str, remark: str = "", protocol: str = DEFAULT_PROTOCOL) -> str:
     link = LINKS.get(uuid) or {}
-    host, public_port = public_config_endpoint(uuid, host)
+    connect_host, public_port = public_config_endpoint(uuid, host)
+    tls_host = public_config_sni(uuid, connect_host)
     # The client-visible title always follows the user/configuration name policy,
     # even for legacy callers that used to pass an `RVG-...` remark.
     remark = client_display_label(uuid, link) if link else clean_public_label(remark, uuid)
@@ -576,32 +583,32 @@ def generate_share_link(uuid: str, host: str, remark: str = "", protocol: str = 
             return f"tg://proxy?server={host}&port=0&secret=not_ready#{quote(remark)}"
         pub_host = link.get("mtproto_public_host")
         pub_port = link.get("mtproto_public_port")
-        final_host = pub_host or host
+        final_host = pub_host or connect_host
         final_port = pub_port or public_port or port
         return f"{mtproto.generate_mtproto_link(final_host, final_port, secret).split('#', 1)[0]}#{quote(remark)}"
 
     if protocol == "shadowsocks":
         cipher = link.get("ss_cipher", DEFAULT_CIPHER)
         password = link.get("ss_password", "")
-        return generate_ss_link(host, public_port, cipher, password, remark)
+        return generate_ss_link(connect_host, public_port, cipher, password, remark, plugin_host=tls_host)
 
     if protocol == "trojan-ws":
         params = {
-            "security": "tls", "type": "ws", "host": host,
-            "path": "/trojan-ws", "sni": host, "fp": fp, "alpn": alpn,
+            "security": "tls", "type": "ws", "host": tls_host,
+            "path": "/trojan-ws", "sni": tls_host, "fp": fp, "alpn": alpn,
         }
         query = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
-        return f"trojan://{uuid}@{host}:{public_port}?{query}#{quote(remark)}"
+        return f"trojan://{uuid}@{connect_host}:{public_port}?{query}#{quote(remark)}"
 
     if protocol.startswith("trojan-xhttp-"):
         mode = protocol.replace("trojan-xhttp-", "")
         path = f"/txhttp-siz10/{mode}/{uuid}"
         params = {
-            "security": "tls", "type": "xhttp", "mode": mode, "host": host,
-            "path": path, "sni": host, "fp": fp, "alpn": alpn,
+            "security": "tls", "type": "xhttp", "mode": mode, "host": tls_host,
+            "path": path, "sni": tls_host, "fp": fp, "alpn": alpn,
         }
         query = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
-        return f"trojan://{uuid}@{host}:{public_port}?{query}#{quote(remark)}"
+        return f"trojan://{uuid}@{connect_host}:{public_port}?{query}#{quote(remark)}"
 
     if protocol == "vless-ws":
         path = f"/ws/{uuid}"
@@ -609,9 +616,9 @@ def generate_share_link(uuid: str, host: str, remark: str = "", protocol: str = 
             "encryption": "none",
             "security": "tls",
             "type": "ws",
-            "host": host,
+            "host": tls_host,
             "path": path,
-            "sni": host,
+            "sni": tls_host,
             "fp": fp,
             "alpn": alpn,
         }
@@ -623,14 +630,14 @@ def generate_share_link(uuid: str, host: str, remark: str = "", protocol: str = 
             "security": "tls",
             "type": "xhttp",
             "mode": mode,
-            "host": host,
+            "host": tls_host,
             "path": path,
-            "sni": host,
+            "sni": tls_host,
             "fp": fp,
             "alpn": alpn,
         }
     query = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
-    return f"vless://{uuid}@{host}:{public_port}?{query}#{quote(remark)}"
+    return f"vless://{uuid}@{connect_host}:{public_port}?{query}#{quote(remark)}"
 
 def uptime() -> str:
     secs = int(time.time() - stats["start_time"])

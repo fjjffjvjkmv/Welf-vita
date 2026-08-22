@@ -320,6 +320,22 @@ def touch_node(node_id: str, meta: dict) -> None:
         "rathole_client_active": bool(meta.get("rathole_client_active", False)),
         "applied_revision": int(meta.get("applied_revision", node.get("applied_revision", 0))),
     })
+    # The agent probes each configured local target (usually 3x-ui on
+    # 127.0.0.1) before its heartbeat. This distinguishes an online agent from
+    # a tunnel whose destination service is not listening.
+    probes = meta.get("local_tunnels", [])
+    if isinstance(probes, list):
+        for probe in probes:
+            if not isinstance(probe, dict):
+                continue
+            tunnel_id = str(probe.get("id") or "")
+            tunnel = STATE.get("tunnels", {}).get(tunnel_id)
+            if not tunnel or str(tunnel.get("node_id")) != str(node_id):
+                continue
+            tunnel["local_service_ok"] = bool(probe.get("ok", False))
+            tunnel["last_local_probe_at"] = _now()
+            tunnel["last_local_probe_ms"] = probe.get("latency_ms")
+            tunnel["last_local_probe_error"] = str(probe.get("error") or "")[:500]
 
 
 def bump_node(node_id: str) -> None:
@@ -375,9 +391,16 @@ def add_tunnel(node_id: str, name: str, local_host: str, local_port: int, public
         "external_scheme": "",
         "external_path": "",
         "connection_status": "not-configured",
+        # Public TCP reachability and local 3x-ui reachability are reported
+        # independently. A TCP accept alone does not prove a client config works.
+        "public_tcp_open": None,
         "last_ping_ms": None,
         "last_ping_at": 0,
         "last_ping_error": "",
+        "local_service_ok": None,
+        "last_local_probe_at": 0,
+        "last_local_probe_ms": None,
+        "last_local_probe_error": "",
         "link_id": "",
         "config_domain": "",
         "origin_host": "",
@@ -420,6 +443,9 @@ def record_ping(tunnel_id: str, ok: bool, latency_ms: float | None = None, error
     t["last_ping_at"] = _now()
     t["last_ping_ms"] = round(float(latency_ms), 2) if latency_ms is not None else None
     t["last_ping_error"] = str(error or "")[:500]
+    t["public_tcp_open"] = bool(ok)
+    # Kept for existing UI compatibility. It means only that the Railway TCP
+    # socket accepted a connection, not that VLESS/Trojan authentication passed.
     t["connection_status"] = "online" if ok else "error"
     return dict(t)
 
