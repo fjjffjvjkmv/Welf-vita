@@ -2669,7 +2669,9 @@ a{color:inherit;text-decoration:none}
         <input class="cm-input" id="tun-local-port" type="number" min="1" max="65535" value="443">
       </div>
       <div style="grid-column:1/-1">
-        <div class="card-title" style="font-size:12px;margin:8px 0"><i class="ti ti-world"></i> دامنهٔ اتصال کلاینت و بررسی سلامت</div>
+        <div class="cm-note" style="margin:6px 0 12px"><i class="ti ti-bolt"></i><span>برای اتصال سریع فقط کانفیگ، نود، پورت واقعی 3x-ui و TCP Proxy سرویس Railway لازم است. گزینه‌های زیر اختیاری‌اند.</span></div>
+        <details id="tun-advanced-options" style="margin-top:8px"><summary style="cursor:pointer;color:var(--t2);font-weight:700">تنظیمات پیشرفته: دامنه، TLS/SNI و مشخصات Origin</summary>
+        <div class="card-title" style="font-size:12px;margin:12px 0 8px"><i class="ti ti-world"></i> دامنهٔ اتصال کلاینت و بررسی سلامت</div>
         <div class="g2" style="margin:0">
           <div>
             <label>دامنهٔ عمومی داخل Config</label>
@@ -2719,6 +2721,7 @@ a{color:inherit;text-decoration:none}
             <input class="cm-input" id="tun-external-path" type="text" value="/" placeholder="/">
           </div>
         </div>
+        </details>
         <div id="tun-manual-public-endpoint" style="margin-top:12px">
           <div class="g2" style="margin:0">
             <div><label>Hostname TCP Proxy سرویس</label><input class="cm-input" id="tun-manual-public-host" type="text" spellcheck="false" placeholder="shuttle.proxy.rlwy.net"></div>
@@ -2726,7 +2729,7 @@ a{color:inherit;text-decoration:none}
           </div>
           <div class="cm-note" style="margin-top:8px"><i class="ti ti-info-circle"></i><span>بدون توکن: در Railway برای «پورت پیش‌فرض» بالا TCP Proxy بساز و hostname:port آن را اینجا وارد کن. پنل آن را در کانفیگ کاربر قرار می‌دهد.</span></div>
         </div>
-        <div class="cm-note" style="margin-top:8px"><i class="ti ti-info-circle"></i><span>دامنهٔ عمومی باید با CNAME (DNS-only) به hostname ساخته‌شده توسط Railway وصل شود. Railway پورت عمومی اختصاصی می‌دهد؛ پنل همان پورت را داخل لینک‌های VLESS، Trojan و Shadowsocks می‌نویسد. آدرس بررسی سلامت اختیاری است و فقط برای Ping ذخیره می‌شود.</span></div>
+        <div class="cm-note" style="margin-top:8px"><i class="ti ti-info-circle"></i><span>فقط hostname و پورت Proxy دادهٔ Railway را وارد کنید؛ این دو مقدار نباید با Control Proxy برابر باشند.</span></div>
       </div>
     </div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px">
@@ -4589,7 +4592,7 @@ async function createTunnelFromWorkflow(){
     });
     const d=await r.json();
     if(!r.ok)throw new Error(d.detail||'ساخت تونل ناموفق بود');
-    toast('پورت منتشر شد؛ حالا دامنه خارج تونل را وارد کن','ok');
+    toast('تونل منتشر شد؛ تا رسیدن heartbeat نود صبر کن و سپس Ping را بزن','ok');
 
     // Keep selected values through the refresh that follows.
     const selected={link:uid,node:nodeId,port:String(port)};
@@ -4853,10 +4856,19 @@ async function openRatholeTunnelModal(){
  }catch(e){toast(e.message||'خطا','err')}
 }
 async function deleteRatholeTunnel(id){if(!confirm('تونل حذف شود؟'))return;await authF('/api/rathole/tunnels/'+encodeURIComponent(id),{method:'DELETE'});loadRathole()}
+function safeRatholePort(id,fallback){
+ const raw=String(document.getElementById(id)?.value??'').trim();
+ const parsed=Number(raw);
+ return Number.isInteger(parsed)&&parsed>=1&&parsed<=65535 ? parsed : Number(fallback);
+}
 async function saveRatholeSettings(){
- const oldPort=Number(document.getElementById('rh-server-port')?.dataset.saved||document.getElementById('rh-server-port').value);
- const newPort=Number(document.getElementById('rh-server-port').value);
- const body={server_bind_port:newPort,public_base_port:Number(document.getElementById('rh-public-port').value),publication_mode:ratholePublicationMode(),nodelay:document.getElementById('rh-nodelay').checked,transport:document.getElementById('rh-transport')?.value||'tcp'};
+ const current=ratholeCache?.settings||{};
+ const oldPort=safeRatholePort('rh-server-port',current.server_bind_port||23333);
+ const newPort=safeRatholePort('rh-server-port',current.server_bind_port||23333);
+ const publicPort=safeRatholePort('rh-public-port',current.public_base_port||443);
+ const rawTransport=String(document.getElementById('rh-transport')?.value||current.transport||'noise').toLowerCase();
+ const transport=['noise','tcp'].includes(rawTransport)?rawTransport:'noise';
+ const body={server_bind_port:newPort,public_base_port:publicPort,publication_mode:ratholePublicationMode(),nodelay:!!document.getElementById('rh-nodelay')?.checked,transport};
  try{
    const r=await authF('/api/rathole/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
    const d=await r.json();
