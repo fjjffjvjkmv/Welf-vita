@@ -184,3 +184,10 @@ def test_agent_reports_local_target_failures_to_control_plane():
     state_tunnel = rathole_control.STATE["tunnels"][tunnel["id"]]
     assert state_tunnel["local_service_ok"] is False
     assert state_tunnel["last_local_probe_error"]
+
+
+
+def test_server_config_has_services_table_before_first_tunnel():
+    reset_state("noise")
+    config = rathole_server_manager.render()
+    assert "[server.services]" in config

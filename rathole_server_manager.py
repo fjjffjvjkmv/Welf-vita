@@ -38,6 +38,11 @@ def render():
             '[server.transport.noise]',
             f"local_private_key = {q(keys['private_key'])}",
         ]
+    # Rathole v0.5 requires the `server.services` map even before the first
+    # tunnel is created. Without this empty table it exits with
+    # `missing field services for key server`, which makes a fresh Railway
+    # deployment look unhealthy.
+    lines += ["", "[server.services]"]
     # WebSocket is intentionally transported as raw TCP by Rathole; no HTTP parsing is inserted in the data path.
     for t in rathole_control.STATE['tunnels'].values():
         if not t.get('enabled',True):

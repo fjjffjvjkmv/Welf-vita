@@ -3211,7 +3211,7 @@ async def rathole_agent_version():
 
 @app.get("/api/rathole/agent/health")
 async def rathole_agent_health():
-    return {"ok": True, "service": "rathole-agent-api", "agent_version": "2.0"}
+    return {"ok": True, "service": "rathole-agent-api", "agent_version": "2.3"}
 
 @app.get("/static/rathole_agent_v2.py")
 async def rathole_agent_v2_file():
