@@ -200,3 +200,26 @@ def test_legacy_railway_healthcheck_path_returns_success():
     payload = asyncio.run(main.railway_legacy_healthcheck())
     assert payload["status"] == "ok"
     assert payload["service"] == "rvg-gateway"
+
+
+def test_ping_rejects_control_proxy_as_service_proxy():
+    import asyncio
+
+    class EmptyRequest:
+        async def json(self):
+            return {}
+
+    reset_state()
+    rathole_control.configure_manual_control_endpoint("control.proxy.rlwy.net", 50755)
+    tunnel = rathole_control.add_tunnel("n1", "xui", "127.0.0.1", 443, 443)
+    rathole_control.STATE["tunnels"][tunnel["id"]].update(
+        {"proxy_domain": "control.proxy.rlwy.net", "proxy_port": 50755}
+    )
+
+    response = asyncio.run(
+        main.rathole_ping_external(tunnel["id"], EmptyRequest(), _=None)
+    )
+
+    assert response["ok"] is False
+    assert "Control Proxy" in response["error"]
+    assert rathole_control.STATE["tunnels"][tunnel["id"]]["public_tcp_open"] is False

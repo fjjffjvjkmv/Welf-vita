@@ -2977,6 +2977,16 @@ async def rathole_create_tunnel(request: Request, _=Depends(require_auth)):
                 str(body.get("manual_public_host") or ""),
                 int(body.get("manual_public_port") or 0),
             )
+            control_host, control_port, _ = rathole_control.control_endpoint()
+            if (
+                control_host
+                and manual_host.lower().rstrip(".") == control_host.lower().rstrip(".")
+                and int(manual_port) == int(control_port)
+            ):
+                raise ValueError(
+                    "این TCP Proxy مسیر کنترل Rathole است (target :23333) و برای ترافیک سرویس قابل استفاده نیست. "
+                    "در Railway یک TCP Proxy دوم با target برابر پورت انتشار تونل بسازید."
+                )
             proxy = {
                 "id": "",
                 "domain": manual_host,
@@ -3080,10 +3090,26 @@ async def rathole_ping_external(tunnel_id: str, request: Request, _=Depends(requ
         body = await request.json()
     except Exception:
         body = {}
-    host = str(body.get("host") or t.get("external_host") or "").strip()
-    port = int(body.get("port") or t.get("external_port") or t.get("proxy_port") or 0)
+    # A TCP health check must always target the generated Railway service
+    # proxy. The custom config domain is SNI/DNS metadata and may resolve to a
+    # different endpoint or port, so it is not a valid raw-TCP probe target.
+    host = str(t.get("proxy_domain") or t.get("external_host") or body.get("host") or "").strip()
+    port = int(t.get("proxy_port") or t.get("external_port") or body.get("port") or 0)
     if not host or not port:
-        raise HTTPException(status_code=400, detail="external host/port is not configured")
+        raise HTTPException(status_code=400, detail="TCP Proxy سرویس Railway تنظیم نشده است")
+    control_host, control_port, _ = rathole_control.control_endpoint()
+    if (
+        control_host
+        and host.lower().rstrip(".") == control_host.lower().rstrip(".")
+        and int(port) == int(control_port)
+    ):
+        message = (
+            "این endpoint مربوط به Control Proxy (:23333) است، نه TCP Proxy سرویس. "
+            "برای پورت انتشار تونل یک TCP Proxy جدا در Railway بسازید."
+        )
+        t = rathole_control.record_ping(tunnel_id, False, None, message)
+        await rathole_control.save()
+        return {"ok": False, "host": host, "port": port, "error": message, "status": t.get("connection_status")}
     start = time.perf_counter()
     try:
         reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=5.0)
