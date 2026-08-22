@@ -28,6 +28,7 @@ def _install_packages():
 import asyncio
 import json
 import os
+import socket
 import hashlib
 import secrets
 import sys
@@ -3307,13 +3308,49 @@ async def dashboard(request: Request):
 async def test_ws_redirect():
     return HTMLResponse(content="<script>location.href='/dashboard'</script>")
 
+def _http_listen_socket(port: int) -> socket.socket:
+    """Create a pre-bound HTTP listener so Uvicorn can serve more than one port."""
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("0.0.0.0", port))
+    listener.listen(socket.SOMAXCONN)
+    listener.setblocking(False)
+    return listener
+
+
 if __name__ == "__main__":
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=CONFIG["port"],
-        log_level="info",
-        workers=1,
-        loop="auto",         # uvloop رو در صورت نصب بودن استفاده می‌کنه، وگرنه بدون کرش fallback می‌کنه
-        http="auto",
-    )
+    # Railway normally routes public HTTP to the injected PORT. Some existing
+    # services, however, have a custom-domain target fixed at 8080 while PORT
+    # is a different value (for example 8888). Serve both ports so the web
+    # panel remains reachable during and after that transition. The Rathole
+    # control port is independent and remains configured separately.
+    primary_port = int(CONFIG["port"])
+    compat_port = int(os.environ.get("RVG_HTTP_COMPAT_PORT", "8080"))
+    ports = list(dict.fromkeys([primary_port, compat_port]))
+    listeners: list[socket.socket] = []
+    try:
+        for listen_port in ports:
+            try:
+                listeners.append(_http_listen_socket(listen_port))
+                logger.info("HTTP listener آماده است روی 0.0.0.0:%s", listen_port)
+            except OSError as exc:
+                # The injected Railway port is mandatory. A secondary
+                # compatibility port is best-effort and must never prevent
+                # the service from starting if another process owns it.
+                if listen_port == primary_port:
+                    raise
+                logger.warning("پورت سازگار HTTP %s در دسترس نیست: %s", listen_port, exc)
+        uvicorn_config = uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=primary_port,
+            log_level="info",
+            workers=1,
+            loop="auto",
+            http="auto",
+        )
+        asyncio.run(uvicorn.Server(uvicorn_config).serve(sockets=listeners))
+    except Exception:
+        for listener in listeners:
+            listener.close()
+        raise
