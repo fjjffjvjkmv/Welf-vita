@@ -106,7 +106,9 @@ def get_host_scheme():
     return "https" if os.environ.get("RAILWAY_PUBLIC_DOMAIN") else "http"
 
 CONFIG = {
-    "port": int(os.environ.get("PORT", 8000)),
+    # Railway injects PORT when configured; 8080 is the safe fallback for a
+    # Railway HTTP target port when that variable has not been injected.
+    "port": int(os.environ.get("PORT", 8080)),
     "secret": _get_or_create_secret(),
     "host": os.environ.get("RAILWAY_PUBLIC_DOMAIN", "localhost"),
 }

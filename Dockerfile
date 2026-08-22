@@ -30,6 +30,9 @@ RUN curl -fsSL --retry 4 --retry-delay 2 \
     && install -m 0755 /tmp/rathole/rathole /usr/local/bin/rathole \
     && rm -rf /tmp/rathole /tmp/rathole.zip
 
+# The Railway HTTP domain targets this container port when PORT is not injected.
+EXPOSE 8080
+
 # Keep the final layer focused on runtime files.
 COPY . .
 
